@@ -6,11 +6,6 @@ public enum PowerHelperIPC {
     public static let plistName = "com.omzcj.minitools.power-helper.plist"
     public static let appCodeSignIdentifier = "com.omzcj.minitools"
     public static let helperCodeSignIdentifier = "com.omzcj.minitools.power-helper"
-    public static let sentinelPath =
-        "/Library/Application Support/miniTools/closed_lid_running.flag"
-
-    public static let watchdogGraceSeconds: TimeInterval = 15
-    public static let recoveryRetrySeconds: TimeInterval = 60
     public static let protocolVersion = 1
 
     public static func peerRequirement(identifier: String) -> String {
@@ -47,8 +42,6 @@ public enum PowerHelperIPC {
 public enum PowerHelperResult: Int32, Sendable {
     case success = 0
     case commandFailed = 1
-    case ownedByAnotherProcess = 2
-    case recoveryStateFailed = 3
 }
 
 @objc public protocol PowerHelperProtocol {

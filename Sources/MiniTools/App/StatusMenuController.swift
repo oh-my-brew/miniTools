@@ -84,9 +84,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             : "显示：快捷键冲突"
 
         let isBusy = closedLidRunningController.isBusy
-        let isEnabled = closedLidRunningController.isEnabled
+        let isEnabled = closedLidRunningController.isFeatureEnabled
+        let actualSleepDisabled = closedLidRunningController.actualSleepDisabled
         let tooltip = closedLidRunningController.lastError
-            ?? closedLidRunningController.lastStopSummary
+            ?? "SleepDisabled 实际值：\(closedLidRunningController.actualStateTitle)"
         closedLidRunningItem?.title = isEnabled
             ? Self.disableClosedLidRunningTitle
             : Self.enableClosedLidRunningTitle
@@ -100,7 +101,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         closedLidRunningItem?.isEnabled = !isBusy
         closedLidRunningItem?.toolTip = tooltip
 
-        statusItem?.button?.image = statusBarIcon(isClosedLidRunning: isEnabled)
+        statusItem?.button?.image = statusBarIcon(
+            isClosedLidRunning: actualSleepDisabled == true
+        )
     }
 
     func menuWillOpen(_ menu: NSMenu) {

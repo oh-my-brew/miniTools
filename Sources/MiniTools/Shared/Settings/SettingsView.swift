@@ -26,7 +26,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .windowManagement:
             "配置窗口布局、跨屏操作与全局快捷键。"
         case .closedLidRunning:
-            "配置合盖运行安全保护与查看关闭记录。"
+            "查看合盖运行服务状态与最近关闭记录。"
         case .mouseBindings:
             "为 Button 4、Button 5 分配点击和方向拖动动作。"
         case .cursorAnimation:
@@ -209,29 +209,6 @@ private struct SettingsCategoryDetail: View {
 
     @ViewBuilder
     private var closedLidRunningSettings: some View {
-        Section("安全保护") {
-            LabeledContent {
-                Picker("", selection: Binding(
-                    get: { settings.closedLidBatteryThreshold },
-                    set: { threshold in
-                        settings.updateClosedLidBatteryThreshold(threshold)
-                    }
-                )) {
-                    ForEach(ClosedLidBatteryThreshold.allCases) { threshold in
-                        Text(threshold.title).tag(threshold)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(width: 190)
-            } label: {
-                settingsLabel(
-                    title: "触发电量",
-                    subtitle: "使用电池且低于该电量时自动关闭"
-                )
-            }
-        }
-
         Section {
             LabeledContent {
                 helperStatusControl
@@ -242,11 +219,20 @@ private struct SettingsCategoryDetail: View {
                     subtitle: "用于控制 MacBook 合盖后的系统睡眠"
                 )
             }
+            LabeledContent {
+                Text(closedLidRunningController.actualStateTitle)
+                    .foregroundStyle(.secondary)
+            } label: {
+                settingsLabel(
+                    title: "SleepDisabled 实际值",
+                    subtitle: "状态栏锤子旁的小点也显示这个值"
+                )
+            }
         } header: {
             Text("后台服务")
         } footer: {
             VStack(alignment: .leading, spacing: 5) {
-                Text("电量低于设定值、严重过热或运行异常时自动关闭。")
+                Text("每分钟检查电量；低于 20% 时关闭，高于 25% 时自动恢复。")
                 if let error = closedLidRunningController.lastError {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
@@ -270,9 +256,7 @@ private struct SettingsCategoryDetail: View {
                     } label: {
                         settingsLabel(
                             title: session.stopReason?.title ?? "未知原因",
-                            subtitle: session.duration.map {
-                                "运行方式：\($0.title)"
-                            } ?? "历史会话"
+                            subtitle: "合盖运行会话"
                         )
                     }
                 }

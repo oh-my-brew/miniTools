@@ -10,7 +10,7 @@ final class AppSettings: ObservableObject {
         static let cursorHighlightStyles = "cursorHighlightStyles"
         static let mouseBindings = "mouseBindings"
         static let mouseDragThresholdRatio = "mouseDragThresholdRatio"
-        static let closedLidBatteryThreshold = "closedLidBatteryThreshold"
+        static let closedLidRunningEnabled = "closedLidRunningEnabled"
         static let legacyMouseDragThreshold = "mouseDragThreshold"
         static let restoredHikariCursorStyle = "restoredHikariCursorStyleV1"
 
@@ -27,7 +27,7 @@ final class AppSettings: ObservableObject {
     @Published private(set) var cursorHighlightStyles: Set<CursorHighlightStyle>
     @Published private(set) var mouseBindings: [MouseBindingKey: AppCommand]
     @Published private(set) var mouseDragThresholdRatio: Double
-    @Published private(set) var closedLidBatteryThreshold: ClosedLidBatteryThreshold
+    @Published private(set) var closedLidRunningEnabled: Bool
     @Published var compressionQuality: Double {
         didSet {
             defaults.set(compressionQuality, forKey: Keys.compressionQuality)
@@ -54,9 +54,7 @@ final class AppSettings: ObservableObject {
         cursorHighlightStyles = loadedCursorHighlightStyles
         mouseBindings = Self.loadMouseBindings(defaults: defaults)
         mouseDragThresholdRatio = Self.loadMouseDragThresholdRatio(defaults: defaults)
-        closedLidBatteryThreshold = ClosedLidBatteryThreshold(
-            rawValue: defaults.integer(forKey: Keys.closedLidBatteryThreshold)
-        ) ?? .twenty
+        closedLidRunningEnabled = defaults.bool(forKey: Keys.closedLidRunningEnabled)
 
         let storedQuality = defaults.double(forKey: Keys.compressionQuality)
         compressionQuality = storedQuality == 0 ? 0.7 : storedQuality
@@ -118,10 +116,10 @@ final class AppSettings: ObservableObject {
         defaults.set(normalized, forKey: Keys.mouseDragThresholdRatio)
     }
 
-    func updateClosedLidBatteryThreshold(_ threshold: ClosedLidBatteryThreshold) {
-        guard threshold != closedLidBatteryThreshold else { return }
-        closedLidBatteryThreshold = threshold
-        defaults.set(threshold.rawValue, forKey: Keys.closedLidBatteryThreshold)
+    func updateClosedLidRunningEnabled(_ enabled: Bool) {
+        guard enabled != closedLidRunningEnabled else { return }
+        closedLidRunningEnabled = enabled
+        defaults.set(enabled, forKey: Keys.closedLidRunningEnabled)
     }
 
     @discardableResult
@@ -150,6 +148,10 @@ final class AppSettings: ObservableObject {
 
     private static func loadPanelShortcut(defaults: UserDefaults) -> KeyboardShortcut {
         if let shortcut = decodeShortcut(defaults.data(forKey: Keys.panelShortcut)) {
+            if shortcut == .previousPanelDefault {
+                persist(.panelDefault, key: Keys.panelShortcut, defaults: defaults)
+                return .panelDefault
+            }
             return shortcut
         }
 

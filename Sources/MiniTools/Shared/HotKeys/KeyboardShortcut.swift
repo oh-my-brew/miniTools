@@ -6,6 +6,11 @@ struct KeyboardShortcut: Codable, Equatable, Sendable {
 
     static let panelDefault = KeyboardShortcut(
         keyCode: UInt32(kVK_Space),
+        carbonModifiers: UInt32(cmdKey | optionKey | controlKey | shiftKey)
+    )
+
+    static let previousPanelDefault = KeyboardShortcut(
+        keyCode: UInt32(kVK_Space),
         carbonModifiers: UInt32(optionKey)
     )
 

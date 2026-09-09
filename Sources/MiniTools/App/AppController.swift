@@ -74,10 +74,10 @@ final class AppController: NSObject {
         }
         statusMenuController.onToggleClosedLidRunning = { [weak self] in
             guard let self else { return }
-            if closedLidRunningController.isEnabled {
+            if closedLidRunningController.isFeatureEnabled {
                 closedLidRunningController.disable()
             } else {
-                closedLidRunningController.select(duration: .unlimited)
+                closedLidRunningController.enable()
             }
         }
         statusMenuController.onMenuWillOpen = { [weak self] in

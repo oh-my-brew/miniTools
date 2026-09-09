@@ -11,7 +11,7 @@ final class AppSettingsTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
 
         XCTAssertEqual(settings.panelShortcut, .panelDefault)
-        XCTAssertEqual(settings.panelShortcut.displayName, "⌥Space")
+        XCTAssertEqual(settings.panelShortcut.displayName, "⌃⌥⇧⌘Space")
         XCTAssertEqual(settings.lastFeaturePanel, .encodingConversion)
     }
 
@@ -85,6 +85,18 @@ final class AppSettingsTests: XCTestCase {
 
         let restored = AppSettings(defaults: defaults)
         XCTAssertEqual(restored.panelShortcut, shortcut)
+    }
+
+    @MainActor
+    func testMigratesPreviousPanelDefaultToNewDefault() throws {
+        let (defaults, suiteName) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(
+            try JSONEncoder().encode(KeyboardShortcut.previousPanelDefault),
+            forKey: "panelShortcut"
+        )
+
+        XCTAssertEqual(AppSettings(defaults: defaults).panelShortcut, .panelDefault)
     }
 
     @MainActor
@@ -183,26 +195,20 @@ final class AppSettingsTests: XCTestCase {
     }
 
     @MainActor
-    func testPersistsClosedLidSafetySettings() throws {
+    func testClosedLidRunningMenuTitles() {
+        XCTAssertEqual(StatusMenuController.enableClosedLidRunningTitle, "启动合盖运行")
+        XCTAssertEqual(StatusMenuController.disableClosedLidRunningTitle, "关闭合盖运行")
+    }
+
+    @MainActor
+    func testPersistsClosedLidRunningFeatureSwitch() throws {
         let (defaults, suiteName) = try makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let settings = AppSettings(defaults: defaults)
 
-        XCTAssertEqual(settings.closedLidBatteryThreshold, .twenty)
-
-        settings.updateClosedLidBatteryThreshold(.forty)
-
-        let restored = AppSettings(defaults: defaults)
-        XCTAssertEqual(restored.closedLidBatteryThreshold, .forty)
-    }
-
-    @MainActor
-    func testClosedLidRunningMenuTitlesAndLegacyDurationIntervals() {
-        XCTAssertEqual(StatusMenuController.enableClosedLidRunningTitle, "启动合盖运行")
-        XCTAssertEqual(StatusMenuController.disableClosedLidRunningTitle, "关闭合盖运行")
-        XCTAssertNil(ClosedLidRunDuration.unlimited.interval)
-        XCTAssertEqual(ClosedLidRunDuration.oneHour.interval, 60 * 60)
-        XCTAssertEqual(ClosedLidRunDuration.eightHours.interval, 8 * 60 * 60)
+        XCTAssertFalse(settings.closedLidRunningEnabled)
+        settings.updateClosedLidRunningEnabled(true)
+        XCTAssertTrue(AppSettings(defaults: defaults).closedLidRunningEnabled)
     }
 
     private func makeDefaults() throws -> (UserDefaults, String) {

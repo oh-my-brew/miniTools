@@ -3,17 +3,13 @@ import Foundation
 enum ClosedLidStopReason: String, Codable, Equatable, Sendable {
     case manual
     case lowBattery
-    case thermalPressure
-    case timeLimit
-    case serviceRecovery
+    case legacyAutomatic
 
     var title: String {
         switch self {
         case .manual: "手动关闭"
-        case .lowBattery: "电量过低后自动关闭"
-        case .thermalPressure: "温度过高后自动关闭"
-        case .timeLimit: "达到运行时长后自动关闭"
-        case .serviceRecovery: "后台服务已恢复系统睡眠"
+        case .lowBattery: "电量低于 20% 后自动关闭"
+        case .legacyAutomatic: "旧版本自动关闭"
         }
     }
 }
@@ -22,11 +18,8 @@ struct ClosedLidSessionHistory: Codable, Equatable, Sendable {
     let startedAt: Date
     let stoppedAt: Date?
     let stopReason: ClosedLidStopReason?
-    let duration: ClosedLidRunDuration?
 
-    var isActive: Bool {
-        stoppedAt == nil
-    }
+    var isActive: Bool { stoppedAt == nil }
 
     var stopSummary: String? {
         guard let stoppedAt, let stopReason else { return nil }
@@ -43,21 +36,23 @@ private struct ClosedLidSessionHistoryArchive: Codable {
 }
 
 private struct LegacyClosedLidSessionHistoryArchive: Decodable {
-    struct ActiveSession: Decodable {
+    struct Session: Decodable {
         let startedAt: Date
         let stoppedAt: Date?
-        let duration: ClosedLidRunDuration?
+        let stopReason: String?
     }
 
-    let activeSession: ActiveSession?
+    let activeSession: Session?
+    let recentClosedSessions: [Session]?
 }
 
 @MainActor
 final class ClosedLidSessionHistoryStore {
     static let maximumRecentSessionCount = 5
 
-    private static let storageKey = "closedLidSessionHistoryArchiveV3"
+    private static let storageKey = "closedLidSessionHistoryArchiveV4"
     private static let obsoleteStorageKeys = [
+        "closedLidSessionHistoryArchiveV3",
         "closedLidSessionHistoryArchiveV2",
         "closedLidSessionHistory"
     ]
@@ -68,27 +63,6 @@ final class ClosedLidSessionHistoryStore {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        let legacyActiveSession = defaults
-            .data(forKey: "closedLidSessionHistoryArchiveV2")
-            .flatMap {
-                try? JSONDecoder().decode(
-                    LegacyClosedLidSessionHistoryArchive.self,
-                    from: $0
-                ).activeSession
-            }
-            .flatMap { session -> ClosedLidSessionHistory? in
-                guard session.stoppedAt == nil else { return nil }
-                return ClosedLidSessionHistory(
-                    startedAt: session.startedAt,
-                    stoppedAt: nil,
-                    stopReason: nil,
-                    duration: session.duration
-                )
-            }
-        for key in Self.obsoleteStorageKeys {
-            defaults.removeObject(forKey: key)
-        }
-
         if let data = defaults.data(forKey: Self.storageKey),
            let archive = try? JSONDecoder().decode(
                ClosedLidSessionHistoryArchive.self,
@@ -105,21 +79,28 @@ final class ClosedLidSessionHistoryStore {
             return
         }
 
-        activeSession = legacyActiveSession
-        recentClosedSessions = []
+        let legacyArchive = Self.obsoleteStorageKeys
+            .compactMap { defaults.data(forKey: $0) }
+            .compactMap {
+                try? JSONDecoder().decode(LegacyClosedLidSessionHistoryArchive.self, from: $0)
+            }
+            .first
+        activeSession = legacyArchive?.activeSession.flatMap(Self.migrateActiveSession)
+        recentClosedSessions = Array(
+            (legacyArchive?.recentClosedSessions ?? [])
+                .compactMap(Self.migrateClosedSession)
+                .prefix(Self.maximumRecentSessionCount)
+        )
+        for key in Self.obsoleteStorageKeys { defaults.removeObject(forKey: key) }
         persist()
     }
 
     @discardableResult
-    func recordStarted(
-        duration: ClosedLidRunDuration,
-        at date: Date = Date()
-    ) -> ClosedLidSessionHistory {
+    func recordStarted(at date: Date = Date()) -> ClosedLidSessionHistory {
         let session = ClosedLidSessionHistory(
             startedAt: date,
             stoppedAt: nil,
-            stopReason: nil,
-            duration: duration
+            stopReason: nil
         )
         activeSession = session
         persist()
@@ -131,14 +112,11 @@ final class ClosedLidSessionHistoryStore {
         reason: ClosedLidStopReason,
         at date: Date = Date()
     ) -> ClosedLidSessionHistory? {
-        guard let current = activeSession else {
-            return recentClosedSessions.first
-        }
+        guard let current = activeSession else { return recentClosedSessions.first }
         let session = ClosedLidSessionHistory(
             startedAt: current.startedAt,
             stoppedAt: date,
-            stopReason: reason,
-            duration: current.duration
+            stopReason: reason
         )
         activeSession = nil
         recentClosedSessions.insert(session, at: 0)
@@ -149,6 +127,35 @@ final class ClosedLidSessionHistoryStore {
         }
         persist()
         return session
+    }
+
+    private static func migrateActiveSession(
+        _ session: LegacyClosedLidSessionHistoryArchive.Session
+    ) -> ClosedLidSessionHistory? {
+        guard session.stoppedAt == nil else { return nil }
+        return ClosedLidSessionHistory(
+            startedAt: session.startedAt,
+            stoppedAt: nil,
+            stopReason: nil
+        )
+    }
+
+    private static func migrateClosedSession(
+        _ session: LegacyClosedLidSessionHistoryArchive.Session
+    ) -> ClosedLidSessionHistory? {
+        guard let stoppedAt = session.stoppedAt, let rawReason = session.stopReason else {
+            return nil
+        }
+        let reason: ClosedLidStopReason = switch rawReason {
+        case "manual": .manual
+        case "lowBattery": .lowBattery
+        default: .legacyAutomatic
+        }
+        return ClosedLidSessionHistory(
+            startedAt: session.startedAt,
+            stoppedAt: stoppedAt,
+            stopReason: reason
+        )
     }
 
     private func persist() {
