@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import MiniToolsPowerSupport
 
@@ -39,6 +40,8 @@ private final class PowerService: NSObject, PowerHelperProtocol, @unchecked Send
 
 private final class ListenerDelegate: NSObject, NSXPCListenerDelegate, @unchecked Sendable {
     private let service = PowerService()
+    private let queue = DispatchQueue(label: "com.omzcj.minitools.power-helper.connections")
+    private var connections = Set<ObjectIdentifier>()
 
     func listener(
         _ listener: NSXPCListener,
@@ -49,8 +52,26 @@ private final class ListenerDelegate: NSObject, NSXPCListenerDelegate, @unchecke
         )
         connection.exportedInterface = NSXPCInterface(with: PowerHelperProtocol.self)
         connection.exportedObject = service
+
+        let identifier = ObjectIdentifier(connection)
+        queue.sync {
+            _ = connections.insert(identifier)
+        }
+        connection.invalidationHandler = { [weak self] in
+            self?.connectionEnded(identifier)
+        }
         connection.resume()
         return true
+    }
+
+    private func connectionEnded(_ identifier: ObjectIdentifier) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            connections.remove(identifier)
+            if connections.isEmpty {
+                exit(EXIT_SUCCESS)
+            }
+        }
     }
 }
 
