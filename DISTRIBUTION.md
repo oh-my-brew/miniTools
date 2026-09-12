@@ -10,6 +10,13 @@
 4. 上传 Apple 公证服务，等待通过并将 ticket staple 到应用。
 5. 校验签名、Gatekeeper 和公证 ticket，再生成最终 ZIP、SHA-256 和 GitHub Release。
 
+共享发布流程和 Fastlane lanes 来自 `oh-my-infra/apple-ci`；workflow 固定完整
+commit SHA，Fastfile 固定对应的 `v2026.09.12.1` 签名标签。应用发布结果位于
+`oh-my-brew/miniTools`。
+
+手动运行 Release workflow 时 `publish=false`，仍会构建、签名并提交 Apple
+公证，但不会创建或更新 GitHub Release。迁移验证不需要修改产品版本或创建产品标签。
+
 Release workflow 使用以下 GitHub Actions Secrets：
 
 - `APPLE_ASC_KEY_ID`
@@ -43,13 +50,13 @@ Cask 使用完整四段版本；应用内显示三段日期版本。标签必须
 
 ## Homebrew Tap
 
-`omzcj/homebrew-omzcj` 中的 `minitools` Cask 固定下载对应版本的 GitHub Release。
+`oh-my-brew/homebrew-tap` 中的 `minitools` Cask 固定下载对应版本的 GitHub Release。
 Tap 的定时 Autobump 工作流发现新版本后，会自动创建更新 Cask 版本和 SHA-256 的 PR。
 
 用户可执行：
 
 ```bash
-brew install --cask omzcj/omzcj/minitools
+brew install --cask oh-my-brew/tap/minitools
 ```
 
 合盖运行的 LaunchDaemon 通过 `SMAppService` 从应用包内注册。Cask 必须把应用安装到

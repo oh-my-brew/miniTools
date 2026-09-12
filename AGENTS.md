@@ -158,7 +158,7 @@ git diff --check
 - Git 标签使用 `vYYYY.MM.DD.N`；GitHub Release 产物和 Homebrew Cask 使用不带 `v` 的 `YYYY.MM.DD.N`，同一天从 `1` 开始递增。
 - `.github/workflows/ci.yml` 负责 push、PR 和手动 CI；`.github/workflows/release.yml` 只由 `v*` 标签触发，并校验标签日期与 Info.plist 一致。
 - 正常顺序是：更新展示版本并提交 → 推送 → 等待 CI 成功 → 创建带注释标签并推送 → 等待 Release 完成 → 触发 Tap Autobump。
-- Homebrew Tap 位于同级仓库 `../homebrew-omzcj`，Cask 是 `Casks/minitools.rb`。
+- Homebrew Tap 位于同级仓库 `../homebrew-tap`，Cask 是 `Casks/minitools.rb`。
 - Tap 的 Autobump 只创建升级 PR，不会自动合并。BrewTestBot 通过后，合并仍是单独的外部写操作。
 - 不要假定应用 Release workflow 会直接修改 Homebrew Tap；当前两条流水线相互独立。
 - 创建标签/Release、触发 Autobump、合并 Tap PR 等会改变远端状态的操作，必须来自用户明确授权。
