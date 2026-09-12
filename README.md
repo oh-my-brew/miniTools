@@ -1,6 +1,6 @@
 # miniTools
 
-[![CI](https://github.com/omzcj/miniTools/actions/workflows/ci.yml/badge.svg)](https://github.com/omzcj/miniTools/actions/workflows/ci.yml)
+[![CI](https://github.com/oh-my-brew/miniTools/actions/workflows/ci.yml/badge.svg)](https://github.com/oh-my-brew/miniTools/actions/workflows/ci.yml)
 
 一个面向个人高频场景的轻量级 macOS 编码与转换工具。复制文本或图片后，通过全局快捷键打开操作面板，选择动作并回车，结果会直接写回剪贴板。
 
