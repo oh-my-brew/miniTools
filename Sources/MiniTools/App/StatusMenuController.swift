@@ -7,8 +7,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     var onToggleClosedLidRunning: (() -> Void)?
     var onMenuWillOpen: (() -> Void)?
 
-    static let enableClosedLidRunningTitle = "启动合盖运行"
-    static let disableClosedLidRunningTitle = "关闭合盖运行"
+    static let toolPanelTitle = "工具面板"
+    static let closedLidRunningTitle = "合盖运行"
 
     private var statusItem: NSStatusItem?
     private var panelItem: NSMenuItem?
@@ -22,7 +22,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.delegate = self
 
         let panelItem = NSMenuItem(
-            title: "显示",
+            title: Self.toolPanelTitle,
             action: #selector(openPanel),
             keyEquivalent: ""
         )
@@ -32,7 +32,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         self.panelItem = panelItem
 
         let closedLidRunningItem = NSMenuItem(
-            title: Self.enableClosedLidRunningTitle,
+            title: Self.closedLidRunningTitle,
             action: #selector(toggleClosedLidRunning),
             keyEquivalent: ""
         )
@@ -44,7 +44,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         let settingsItem = NSMenuItem(
-            title: "设置",
+            title: "设置…",
             action: #selector(openSettings),
             keyEquivalent: ","
         )
@@ -52,17 +52,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         settingsItem.image = menuIcon(systemName: "gearshape")
         menu.addItem(settingsItem)
 
-        let versionItem = NSMenuItem(
-            title: versionTitle(),
-            action: nil,
-            keyEquivalent: ""
-        )
-        versionItem.image = menuIcon(systemName: "info.circle")
-        versionItem.isEnabled = false
-        menu.addItem(versionItem)
-
         let quitItem = NSMenuItem(
-            title: "退出",
+            title: "退出 miniTools",
             action: #selector(terminate),
             keyEquivalent: "q"
         )
@@ -80,17 +71,15 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         closedLidRunningController: ClosedLidRunningController
     ) {
         panelItem?.title = shortcutCoordinator.panelError == nil
-            ? "显示（\(settings.panelShortcut.displayName)）"
-            : "显示：快捷键冲突"
+            ? "\(Self.toolPanelTitle)（\(settings.panelShortcut.displayName)）"
+            : "\(Self.toolPanelTitle)：快捷键冲突"
 
         let isBusy = closedLidRunningController.isBusy
         let isEnabled = closedLidRunningController.isFeatureEnabled
         let actualSleepDisabled = closedLidRunningController.actualSleepDisabled
         let tooltip = closedLidRunningController.lastError
             ?? "SleepDisabled 实际值：\(closedLidRunningController.actualStateTitle)"
-        closedLidRunningItem?.title = isEnabled
-            ? Self.disableClosedLidRunningTitle
-            : Self.enableClosedLidRunningTitle
+        closedLidRunningItem?.title = Self.closedLidRunningTitle
         closedLidRunningItem?.state = if isBusy {
             .mixed
         } else if isEnabled {
@@ -139,15 +128,5 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         let image = AppArtwork.hammerStatusIcon(isActive: isClosedLidRunning)
         image?.accessibilityDescription = "miniTools"
         return image
-    }
-
-    private func versionTitle() -> String {
-        guard let version = Bundle.main.object(
-            forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String,
-        !version.isEmpty else {
-            return "版本未知"
-        }
-        return "版本 \(version)"
     }
 }

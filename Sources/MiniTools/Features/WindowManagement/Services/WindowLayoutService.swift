@@ -2,6 +2,18 @@ import AppKit
 import ApplicationServices
 import Foundation
 
+enum WindowActionImplementation: Equatable, Sendable {
+    case macOSNative
+    case miniTools
+
+    var title: String {
+        switch self {
+        case .macOSNative: "macOS 原生"
+        case .miniTools: "miniTools"
+        }
+    }
+}
+
 enum WindowLayoutError: LocalizedError {
     case noActiveApplication
     case noFocusedWindow
@@ -46,12 +58,12 @@ enum WindowLayoutService {
     static func applyLayout(
         _ command: WindowLayoutCommand,
         usesSystemWindowActions: Bool = false
-    ) async throws {
+    ) async throws -> WindowActionImplementation {
         try AccessibilityAuthorization.requirePermission()
         let application = try await frontmostApplication()
         let geometries = await WindowGeometry.screenGeometries()
 
-        try await Task.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             let window = try focusedWindow(for: application)
             try ensureWindowCanBeAdjusted(window)
 
@@ -79,24 +91,25 @@ enum WindowLayoutService {
                    systemAction,
                    processIdentifier: application.processIdentifier
                ) {
-                return
+                return WindowActionImplementation.macOSNative
             }
             try setFrame(
                 target,
                 of: window,
                 processIdentifier: application.processIdentifier
             )
+            return WindowActionImplementation.miniTools
         }.value
     }
 
     static func moveFocusedWindowToNextScreen(
         usesSystemWindowActions: Bool = false
-    ) async throws {
+    ) async throws -> WindowActionImplementation {
         try AccessibilityAuthorization.requirePermission()
         let application = try await frontmostApplication()
         let geometries = await WindowGeometry.screenGeometries()
 
-        try await Task.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             let window = try focusedWindow(for: application)
             try ensureWindowCanBeAdjusted(window)
 
@@ -115,7 +128,7 @@ enum WindowLayoutService {
                    destinationIsBuiltIn: destination.isBuiltIn,
                    processIdentifier: application.processIdentifier
                ) {
-                return
+                return WindowActionImplementation.macOSNative
             }
             let target = WindowGeometry.frameByMoving(
                 currentFrame,
@@ -127,17 +140,18 @@ enum WindowLayoutService {
                 of: window,
                 processIdentifier: application.processIdentifier
             )
+            return WindowActionImplementation.miniTools
         }.value
     }
 
     static func centerFocusedWindow(
         usesSystemWindowActions: Bool = false
-    ) async throws {
+    ) async throws -> WindowActionImplementation {
         try AccessibilityAuthorization.requirePermission()
         let application = try await frontmostApplication()
         let geometries = await WindowGeometry.screenGeometries()
 
-        try await Task.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             let window = try focusedWindow(for: application)
             try ensureWindowCanBeAdjusted(window)
 
@@ -146,7 +160,7 @@ enum WindowLayoutService {
                SystemWindowMenuService.performCenterAction(
                    processIdentifier: application.processIdentifier
                ) {
-                return
+                return WindowActionImplementation.macOSNative
             }
             let visibleFrame = WindowGeometry.screenGeometry(
                 for: currentFrame,
@@ -157,6 +171,7 @@ enum WindowLayoutService {
                 of: window,
                 processIdentifier: application.processIdentifier
             )
+            return WindowActionImplementation.miniTools
         }.value
     }
 

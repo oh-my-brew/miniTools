@@ -3,11 +3,13 @@ import AppKit
 @MainActor
 final class WindowControlController {
     private let settings: AppSettings
+    private let usageStatistics: UsageStatisticsStore
     private let cursorHighlightController = CursorHighlightController()
     private let feedbackController = WindowActionFeedbackController()
 
-    init(settings: AppSettings) {
+    init(settings: AppSettings, usageStatistics: UsageStatisticsStore) {
         self.settings = settings
+        self.usageStatistics = usageStatistics
     }
 
     func perform(
@@ -15,8 +17,14 @@ final class WindowControlController {
         cursorHighlightStyles: Set<CursorHighlightStyle>
     ) {
         let usesSystemWindowActions = settings.usesSystemWindowActions
+        let title = WindowControlCatalog.descriptors.first(where: { $0.id == id })?.title
+            ?? "窗口操作"
         if let command = WindowControlCatalog.layoutCommand(for: id) {
-            performWindowAction {
+            performWindowAction(
+                id: id,
+                title: title,
+                showsImplementationToast: usesSystemWindowActions
+            ) {
                 try await WindowLayoutService.applyLayout(
                     command,
                     usesSystemWindowActions: usesSystemWindowActions
@@ -27,7 +35,11 @@ final class WindowControlController {
 
         switch id {
         case .moveWindowToNextScreen:
-            performWindowAction {
+            performWindowAction(
+                id: id,
+                title: title,
+                showsImplementationToast: usesSystemWindowActions
+            ) {
                 try await WindowLayoutService.moveFocusedWindowToNextScreen(
                     usesSystemWindowActions: usesSystemWindowActions
                 )
@@ -35,7 +47,11 @@ final class WindowControlController {
         case .movePointerToNextScreen:
             movePointerToNextScreen(cursorHighlightStyles: cursorHighlightStyles)
         case .centerWindow:
-            performWindowAction {
+            performWindowAction(
+                id: id,
+                title: title,
+                showsImplementationToast: usesSystemWindowActions
+            ) {
                 try await WindowLayoutService.centerFocusedWindow(
                     usesSystemWindowActions: usesSystemWindowActions
                 )
@@ -55,16 +71,38 @@ final class WindowControlController {
                     atAccessibilityPoint: target,
                     enabledStyles: cursorHighlightStyles
                 )
+                self?.usageStatistics.record(
+                    id: WindowControlID.movePointerToNextScreen.rawValue,
+                    title: "鼠标移至下一屏",
+                    category: .mouseCrossScreen
+                )
             } catch {
                 self?.report(error)
             }
         }
     }
 
-    private func performWindowAction(_ action: @escaping () async throws -> Void) {
+    private func performWindowAction(
+        id: WindowControlID,
+        title: String,
+        showsImplementationToast: Bool,
+        _ action: @escaping () async throws -> WindowActionImplementation
+    ) {
         Task { [weak self] in
             do {
-                try await action()
+                let implementation = try await action()
+                guard let self else { return }
+                usageStatistics.record(
+                    id: id.rawValue,
+                    title: title,
+                    category: .windowManagement
+                )
+                if showsImplementationToast {
+                    feedbackController.showImplementation(
+                        implementation,
+                        actionTitle: title
+                    )
+                }
             } catch {
                 self?.report(error)
             }

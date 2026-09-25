@@ -36,7 +36,6 @@ final class ClosedLidRunningController: ObservableObject {
     @Published private(set) var isBusy = false
     @Published private(set) var helperState: ClosedLidHelperState = .unavailable
     @Published private(set) var lastError: String?
-    @Published private(set) var recentClosedSessions: [ClosedLidSessionHistory]
 
     var onStateChanged: (() -> Void)?
 
@@ -50,7 +49,6 @@ final class ClosedLidRunningController: ObservableObject {
 
     private let settings: AppSettings
     private let client: PowerHelperClient
-    private let historyStore: ClosedLidSessionHistoryStore
     private let service: SMAppService
     private var monitorTask: Task<Void, Never>?
     private var operationTask: Task<Void, Never>?
@@ -58,24 +56,18 @@ final class ClosedLidRunningController: ObservableObject {
 
     init(
         settings: AppSettings,
-        client: PowerHelperClient = PowerHelperClient(),
-        historyStore: ClosedLidSessionHistoryStore = ClosedLidSessionHistoryStore()
+        client: PowerHelperClient = PowerHelperClient()
     ) {
         self.settings = settings
         self.client = client
-        self.historyStore = historyStore
         isFeatureEnabled = settings.closedLidRunningEnabled
         actualSleepDisabled = nil
-        recentClosedSessions = historyStore.recentClosedSessions
         service = SMAppService.daemon(plistName: PowerHelperIPC.plistName)
     }
 
     func start() {
         refreshHelperState()
         guard helperState == .enabled else { return }
-        if isFeatureEnabled, historyStore.activeSession == nil {
-            historyStore.recordStarted()
-        }
         startMonitoring()
         reconcileActualState()
     }
@@ -105,7 +97,6 @@ final class ClosedLidRunningController: ObservableObject {
         guard !isBusy, !isFeatureEnabled else { return }
         isFeatureEnabled = true
         settings.updateClosedLidRunningEnabled(true)
-        historyStore.recordStarted()
         if helperState == .enabled {
             startMonitoring()
             reconcileActualState()
@@ -119,8 +110,6 @@ final class ClosedLidRunningController: ObservableObject {
         guard !isBusy, isFeatureEnabled else { return }
         isFeatureEnabled = false
         settings.updateClosedLidRunningEnabled(false)
-        historyStore.recordStopped(reason: .manual)
-        recentClosedSessions = historyStore.recentClosedSessions
         if helperState == .enabled {
             applySleepDisabled(false, failureMessage: "无法关闭合盖运行")
         } else {

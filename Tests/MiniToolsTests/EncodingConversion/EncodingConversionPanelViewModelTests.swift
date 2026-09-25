@@ -220,6 +220,38 @@ final class EncodingConversionPanelViewModelTests: XCTestCase {
         XCTAssertFalse(didWrite)
     }
 
+    @MainActor
+    func testSuccessfulActionIsReportedOnlyAfterClipboardWrite() async {
+        let action = ToolAction(
+            id: "test.success",
+            title: "测试成功",
+            subtitle: "",
+            systemImage: "checkmark",
+            isRecommended: false
+        ) { .text("output") }
+        var successfulActions: [(String, String)] = []
+        let viewModel = EncodingConversionPanelViewModel(
+            compressionQuality: 0.7,
+            client: EncodingConversionClient(
+                readClipboard: { .text("input") },
+                writeClipboard: { _ in },
+                recognizeImage: { _ in RecognizedImageContents(qrPayload: nil, recognizedText: nil) }
+            ),
+            initialSections: [
+                ToolActionSection(id: "test", title: "Test", actions: [action])
+            ],
+            initialSelectedActionID: action.id
+        )
+        viewModel.onSuccessfulAction = { successfulActions.append(($0, $1)) }
+
+        viewModel.performSelectedAction()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(successfulActions.count, 1)
+        XCTAssertEqual(successfulActions.first?.0, action.id)
+        XCTAssertEqual(successfulActions.first?.1, action.title)
+    }
+
     private func keyEvent(
         keyCode: Int,
         characters: String,
