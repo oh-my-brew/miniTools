@@ -143,12 +143,23 @@ enum WindowGeometry {
         }
         guard !varyingComponents.isEmpty else { return nil }
 
+        let center = CGPoint(x: currentFrame.midX, y: currentFrame.midY)
         return candidates.firstIndex { candidate in
-            varyingComponents.allSatisfy { component, spread in
+            // 只有窗口确实位于该候选所在区域时才继续循环。窗口在别的区域
+            // 但尺寸恰好相近时（例如整块左半屏按右上区域快捷键），应当从
+            // 第一个候选（半宽）重新开始。
+            guard contains(center, in: candidate, margin: tolerance) else { return false }
+
+            return varyingComponents.allSatisfy { component, spread in
                 let allowedDifference = max(tolerance, spread * 0.1)
                 return abs(component(currentFrame) - component(candidate)) <= allowedDifference
             }
         }
+    }
+
+    private static func contains(_ point: CGPoint, in rect: CGRect, margin: CGFloat) -> Bool {
+        let inset = rect.insetBy(dx: margin, dy: margin)
+        return (inset.isEmpty ? rect : inset).contains(point)
     }
 
     static func appKitToAccessibility(_ rect: CGRect, primaryScreenMaxY: CGFloat) -> CGRect {

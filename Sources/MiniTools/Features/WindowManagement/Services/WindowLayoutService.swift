@@ -5,13 +5,12 @@ import Foundation
 enum WindowActionImplementation: Equatable, Sendable {
     case macOSNative
     case miniTools
+}
 
-    var title: String {
-        switch self {
-        case .macOSNative: "macOS 原生"
-        case .miniTools: "miniTools"
-        }
-    }
+/// 一次窗口操作的实际结果：使用了哪套实现，以及命中的循环候选。
+struct WindowActionOutcome: Equatable, Sendable {
+    let implementation: WindowActionImplementation
+    let candidateIndex: Int
 }
 
 enum WindowLayoutError: LocalizedError {
@@ -58,7 +57,7 @@ enum WindowLayoutService {
     static func applyLayout(
         _ command: WindowLayoutCommand,
         usesSystemWindowActions: Bool = false
-    ) async throws -> WindowActionImplementation {
+    ) async throws -> WindowActionOutcome {
         try AccessibilityAuthorization.requirePermission()
         let application = try await frontmostApplication()
         let geometries = await WindowGeometry.screenGeometries()
@@ -91,20 +90,26 @@ enum WindowLayoutService {
                    systemAction,
                    processIdentifier: application.processIdentifier
                ) {
-                return WindowActionImplementation.macOSNative
+                return WindowActionOutcome(
+                    implementation: .macOSNative,
+                    candidateIndex: candidateIndex
+                )
             }
             try setFrame(
                 target,
                 of: window,
                 processIdentifier: application.processIdentifier
             )
-            return WindowActionImplementation.miniTools
+            return WindowActionOutcome(
+                implementation: .miniTools,
+                candidateIndex: targets.firstIndex(of: target) ?? 0
+            )
         }.value
     }
 
     static func moveFocusedWindowToNextScreen(
         usesSystemWindowActions: Bool = false
-    ) async throws -> WindowActionImplementation {
+    ) async throws -> WindowActionOutcome {
         try AccessibilityAuthorization.requirePermission()
         let application = try await frontmostApplication()
         let geometries = await WindowGeometry.screenGeometries()
@@ -128,7 +133,7 @@ enum WindowLayoutService {
                    destinationIsBuiltIn: destination.isBuiltIn,
                    processIdentifier: application.processIdentifier
                ) {
-                return WindowActionImplementation.macOSNative
+                return WindowActionOutcome(implementation: .macOSNative, candidateIndex: 0)
             }
             let target = WindowGeometry.frameByMoving(
                 currentFrame,
@@ -140,13 +145,13 @@ enum WindowLayoutService {
                 of: window,
                 processIdentifier: application.processIdentifier
             )
-            return WindowActionImplementation.miniTools
+            return WindowActionOutcome(implementation: .miniTools, candidateIndex: 0)
         }.value
     }
 
     static func centerFocusedWindow(
         usesSystemWindowActions: Bool = false
-    ) async throws -> WindowActionImplementation {
+    ) async throws -> WindowActionOutcome {
         try AccessibilityAuthorization.requirePermission()
         let application = try await frontmostApplication()
         let geometries = await WindowGeometry.screenGeometries()
@@ -160,7 +165,7 @@ enum WindowLayoutService {
                SystemWindowMenuService.performCenterAction(
                    processIdentifier: application.processIdentifier
                ) {
-                return WindowActionImplementation.macOSNative
+                return WindowActionOutcome(implementation: .macOSNative, candidateIndex: 0)
             }
             let visibleFrame = WindowGeometry.screenGeometry(
                 for: currentFrame,
@@ -171,7 +176,7 @@ enum WindowLayoutService {
                 of: window,
                 processIdentifier: application.processIdentifier
             )
-            return WindowActionImplementation.miniTools
+            return WindowActionOutcome(implementation: .miniTools, candidateIndex: 0)
         }.value
     }
 
