@@ -128,6 +128,18 @@ final class AppSettingsTests: XCTestCase {
     }
 
     @MainActor
+    func testSystemWindowActionsDefaultToDisabledAndPersist() throws {
+        let (defaults, suiteName) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults)
+
+        XCTAssertFalse(settings.usesSystemWindowActions)
+        settings.updateUsesSystemWindowActions(true)
+
+        XCTAssertTrue(AppSettings(defaults: defaults).usesSystemWindowActions)
+    }
+
+    @MainActor
     func testEnablesEveryCursorHighlightStyleByDefault() throws {
         let (defaults, suiteName) = try makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }

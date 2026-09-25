@@ -4,6 +4,20 @@ import CoreGraphics
 struct WindowLayoutScreenGeometry: Equatable, Sendable {
     let fullFrame: CGRect
     let visibleFrame: CGRect
+    let localizedName: String
+    let isBuiltIn: Bool
+
+    init(
+        fullFrame: CGRect,
+        visibleFrame: CGRect,
+        localizedName: String = "",
+        isBuiltIn: Bool = false
+    ) {
+        self.fullFrame = fullFrame
+        self.visibleFrame = visibleFrame
+        self.localizedName = localizedName
+        self.isBuiltIn = isBuiltIn
+    }
 }
 
 struct WindowFrameSettlementTracker {
@@ -196,9 +210,14 @@ enum WindowGeometry {
         let screens = NSScreen.screens
         let primaryMaxY = screens.first?.frame.maxY ?? 0
         return screens.map { screen in
+            let displayID = (screen.deviceDescription[
+                NSDeviceDescriptionKey("NSScreenNumber")
+            ] as? NSNumber)?.uint32Value
             WindowLayoutScreenGeometry(
                 fullFrame: appKitToAccessibility(screen.frame, primaryScreenMaxY: primaryMaxY),
-                visibleFrame: appKitToAccessibility(screen.visibleFrame, primaryScreenMaxY: primaryMaxY)
+                visibleFrame: appKitToAccessibility(screen.visibleFrame, primaryScreenMaxY: primaryMaxY),
+                localizedName: screen.localizedName,
+                isBuiltIn: displayID.map { CGDisplayIsBuiltin($0) != 0 } ?? false
             )
         }
         .sorted { lhs, rhs in

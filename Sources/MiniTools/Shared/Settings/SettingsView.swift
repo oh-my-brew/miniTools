@@ -202,6 +202,18 @@ private struct SettingsCategoryDetail: View {
 
     @ViewBuilder
     private var windowManagementSettings: some View {
+        Section {
+            Toggle(
+                "优先使用系统窗口操作",
+                isOn: Binding(
+                    get: { settings.usesSystemWindowActions },
+                    set: { settings.updateUsesSystemWindowActions($0) }
+                )
+            )
+        } footer: {
+            Text("开启后优先调用当前应用的系统窗口布局与跨屏菜单；应用不支持时自动使用 miniTools 原有方式。")
+        }
+
         Section("窗口布局") {
             ForEach(WindowControlCatalog.windowLayoutDescriptors) { descriptor in
                 windowControlRow(descriptor)
