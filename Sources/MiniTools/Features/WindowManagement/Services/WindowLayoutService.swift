@@ -43,7 +43,10 @@ enum WindowLayoutService {
         let name: String
     }
 
-    static func applyLayout(_ command: WindowLayoutCommand) async throws {
+    static func applyLayout(
+        _ command: WindowLayoutCommand,
+        usesSystemWindowActions: Bool = false
+    ) async throws {
         try AccessibilityAuthorization.requirePermission()
         let application = try await frontmostApplication()
         let geometries = await WindowGeometry.screenGeometries()
@@ -66,6 +69,18 @@ enum WindowLayoutService {
             ) else {
                 throw WindowLayoutError.unreadableWindowFrame
             }
+            if usesSystemWindowActions,
+               let candidateIndex = targets.firstIndex(of: target),
+               let systemAction = SystemWindowActionResolver.layoutAction(
+                   for: command.id,
+                   candidateIndex: candidateIndex
+               ),
+               SystemWindowMenuService.performLayoutAction(
+                   systemAction,
+                   processIdentifier: application.processIdentifier
+               ) {
+                return
+            }
             try setFrame(
                 target,
                 of: window,
@@ -74,7 +89,9 @@ enum WindowLayoutService {
         }.value
     }
 
-    static func moveFocusedWindowToNextScreen() async throws {
+    static func moveFocusedWindowToNextScreen(
+        usesSystemWindowActions: Bool = false
+    ) async throws {
         try AccessibilityAuthorization.requirePermission()
         let application = try await frontmostApplication()
         let geometries = await WindowGeometry.screenGeometries()
@@ -90,10 +107,20 @@ enum WindowLayoutService {
                 geometries: geometries
             )
             let nextIndex = (currentIndex + 1) % geometries.count
+            let destination = geometries[nextIndex]
+            if usesSystemWindowActions,
+               !destination.localizedName.isEmpty,
+               SystemWindowMenuService.performMoveAction(
+                   to: destination.localizedName,
+                   destinationIsBuiltIn: destination.isBuiltIn,
+                   processIdentifier: application.processIdentifier
+               ) {
+                return
+            }
             let target = WindowGeometry.frameByMoving(
                 currentFrame,
                 from: geometries[currentIndex].visibleFrame,
-                to: geometries[nextIndex].visibleFrame
+                to: destination.visibleFrame
             )
             try setFrame(
                 target,
@@ -103,7 +130,9 @@ enum WindowLayoutService {
         }.value
     }
 
-    static func centerFocusedWindow() async throws {
+    static func centerFocusedWindow(
+        usesSystemWindowActions: Bool = false
+    ) async throws {
         try AccessibilityAuthorization.requirePermission()
         let application = try await frontmostApplication()
         let geometries = await WindowGeometry.screenGeometries()
@@ -113,6 +142,12 @@ enum WindowLayoutService {
             try ensureWindowCanBeAdjusted(window)
 
             let currentFrame = try frame(of: window, for: application)
+            if usesSystemWindowActions,
+               SystemWindowMenuService.performCenterAction(
+                   processIdentifier: application.processIdentifier
+               ) {
+                return
+            }
             let visibleFrame = WindowGeometry.screenGeometry(
                 for: currentFrame,
                 geometries: geometries

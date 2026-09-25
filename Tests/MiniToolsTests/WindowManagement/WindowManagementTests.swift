@@ -90,6 +90,45 @@ final class WindowManagementTests: XCTestCase {
         )
     }
 
+    func testSystemWindowActionsOnlyCoverMatchingCycleCandidates() {
+        XCTAssertEqual(
+            SystemWindowActionResolver.layoutAction(for: .upperLeft, candidateIndex: 0),
+            .topLeft
+        )
+        XCTAssertNil(
+            SystemWindowActionResolver.layoutAction(for: .upperLeft, candidateIndex: 1)
+        )
+        XCTAssertNil(
+            SystemWindowActionResolver.layoutAction(for: .left, candidateIndex: 0)
+        )
+        XCTAssertEqual(
+            SystemWindowActionResolver.layoutAction(for: .left, candidateIndex: 1),
+            .left
+        )
+        XCTAssertEqual(
+            SystemWindowActionResolver.layoutAction(for: .horizontalHalves, candidateIndex: 1),
+            .bottom
+        )
+        XCTAssertNil(
+            SystemWindowActionResolver.layoutAction(for: .verticalThirds, candidateIndex: 0)
+        )
+        XCTAssertEqual(
+            SystemWindowActionResolver.layoutAction(for: .maximize, candidateIndex: 1),
+            .fill
+        )
+    }
+
+    func testCrossScreenMenuCandidatesIncludeEnglishFallbacks() {
+        XCTAssertTrue(
+            SystemWindowMenuService.moveToDisplayTitles(displayName: "Studio Display")
+                .contains("Move to “Studio Display”")
+        )
+        XCTAssertTrue(
+            SystemWindowMenuService.moveBackToMacTitles()
+                .contains("Move Window Back to Mac")
+        )
+    }
+
     @MainActor
     func testBuildsTargetFrameInsideVisibleScreen() {
         let visible = CGRect(x: 100, y: 40, width: 1200, height: 900)

@@ -2,25 +2,44 @@ import AppKit
 
 @MainActor
 final class WindowControlController {
+    private let settings: AppSettings
     private let cursorHighlightController = CursorHighlightController()
     private let feedbackController = WindowActionFeedbackController()
+
+    init(settings: AppSettings) {
+        self.settings = settings
+    }
 
     func perform(
         _ id: WindowControlID,
         cursorHighlightStyles: Set<CursorHighlightStyle>
     ) {
+        let usesSystemWindowActions = settings.usesSystemWindowActions
         if let command = WindowControlCatalog.layoutCommand(for: id) {
-            performWindowAction { try await WindowLayoutService.applyLayout(command) }
+            performWindowAction {
+                try await WindowLayoutService.applyLayout(
+                    command,
+                    usesSystemWindowActions: usesSystemWindowActions
+                )
+            }
             return
         }
 
         switch id {
         case .moveWindowToNextScreen:
-            performWindowAction { try await WindowLayoutService.moveFocusedWindowToNextScreen() }
+            performWindowAction {
+                try await WindowLayoutService.moveFocusedWindowToNextScreen(
+                    usesSystemWindowActions: usesSystemWindowActions
+                )
+            }
         case .movePointerToNextScreen:
             movePointerToNextScreen(cursorHighlightStyles: cursorHighlightStyles)
         case .centerWindow:
-            performWindowAction { try await WindowLayoutService.centerFocusedWindow() }
+            performWindowAction {
+                try await WindowLayoutService.centerFocusedWindow(
+                    usesSystemWindowActions: usesSystemWindowActions
+                )
+            }
         default:
             break
         }
