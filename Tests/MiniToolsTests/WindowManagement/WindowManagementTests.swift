@@ -98,12 +98,19 @@ final class WindowManagementTests: XCTestCase {
         XCTAssertNil(
             SystemWindowActionResolver.layoutAction(for: .upperLeft, candidateIndex: 1)
         )
+        XCTAssertEqual(
+            SystemWindowActionResolver.layoutAction(for: .left, candidateIndex: 0),
+            .left
+        )
         XCTAssertNil(
-            SystemWindowActionResolver.layoutAction(for: .left, candidateIndex: 0)
+            SystemWindowActionResolver.layoutAction(for: .left, candidateIndex: 1)
         )
         XCTAssertEqual(
-            SystemWindowActionResolver.layoutAction(for: .left, candidateIndex: 1),
-            .left
+            SystemWindowActionResolver.layoutAction(for: .right, candidateIndex: 0),
+            .right
+        )
+        XCTAssertNil(
+            SystemWindowActionResolver.layoutAction(for: .right, candidateIndex: 1)
         )
         XCTAssertEqual(
             SystemWindowActionResolver.layoutAction(for: .horizontalHalves, candidateIndex: 1),
@@ -186,6 +193,127 @@ final class WindowManagementTests: XCTestCase {
                 candidates: [upper, lower]
             ),
             upper
+        )
+    }
+
+    func testSideCommandsStartAtHalfWidthThenThirdWidth() throws {
+        let left = try XCTUnwrap(WindowControlCatalog.layoutCommand(for: .left))
+        let right = try XCTUnwrap(WindowControlCatalog.layoutCommand(for: .right))
+
+        XCTAssertEqual(left.frames.map(\.width), [0.5, 1.0 / 3.0])
+        XCTAssertEqual(left.frames.map(\.x), [0, 0])
+        XCTAssertEqual(right.frames.map(\.width), [0.5, 1.0 / 3.0])
+        XCTAssertEqual(right.frames.map(\.x), [0.5, 2.0 / 3.0])
+        XCTAssertEqual(
+            WindowControlCatalog.descriptors.first(where: { $0.id == .left })?.subtitle,
+            "二分之一 ↔ 三分之一宽"
+        )
+    }
+
+    func testSwitchingRegionRestartsWithTheHalfWidthCandidate() throws {
+        let visibleFrame = CGRect(x: 0, y: 25, width: 1600, height: 900)
+        let upperLeft = try XCTUnwrap(WindowControlCatalog.layoutCommand(for: .upperLeft))
+        let upperRight = try XCTUnwrap(WindowControlCatalog.layoutCommand(for: .upperRight))
+        let left = try XCTUnwrap(WindowControlCatalog.layoutCommand(for: .left))
+
+        let rightTargets = upperRight.frames.map {
+            WindowGeometry.targetFrame(for: $0, in: visibleFrame)
+        }
+        let leftTargets = left.frames.map {
+            WindowGeometry.targetFrame(for: $0, in: visibleFrame)
+        }
+        let upperLeftHalf = WindowGeometry.targetFrame(
+            for: upperLeft.frames[0],
+            in: visibleFrame
+        )
+
+        // 左上区域半宽时按右上区域，应先给右上区域半宽。
+        XCTAssertEqual(
+            WindowGeometry.nextTarget(currentFrame: upperLeftHalf, candidates: rightTargets),
+            rightTargets[0]
+        )
+
+        // 已经在右上区域半宽里继续按同一快捷键，才进入三分之一宽。
+        XCTAssertEqual(
+            WindowGeometry.nextTarget(currentFrame: rightTargets[0], candidates: rightTargets),
+            rightTargets[1]
+        )
+        XCTAssertEqual(
+            WindowGeometry.nextTarget(currentFrame: rightTargets[1], candidates: rightTargets),
+            rightTargets[0]
+        )
+
+        // 满高右半屏按右上区域，不应直接跳到三分之一宽。
+        let rightFullHeight = CGRect(
+            x: visibleFrame.midX,
+            y: visibleFrame.minY,
+            width: visibleFrame.width / 2,
+            height: visibleFrame.height
+        )
+        XCTAssertEqual(
+            WindowGeometry.nextTarget(currentFrame: rightFullHeight, candidates: rightTargets),
+            rightTargets[0]
+        )
+
+        // 左侧区域：满高左半屏 → 三分之一宽；再次按左半屏 → 回到半宽。
+        XCTAssertEqual(
+            WindowGeometry.nextTarget(currentFrame: leftTargets[0], candidates: leftTargets),
+            leftTargets[1]
+        )
+        XCTAssertEqual(
+            WindowGeometry.nextTarget(currentFrame: leftTargets[1], candidates: leftTargets),
+            leftTargets[0]
+        )
+    }
+
+    func testConstrainedWindowSizeStillCyclesWithinItsOwnRegion() throws {
+        let visibleFrame = CGRect(x: 0, y: 25, width: 1600, height: 900)
+        let upperLeft = try XCTUnwrap(WindowControlCatalog.layoutCommand(for: .upperLeft))
+        let targets = upperLeft.frames.map {
+            WindowGeometry.targetFrame(for: $0, in: visibleFrame)
+        }
+        let constrained = CGRect(
+            x: visibleFrame.minX,
+            y: visibleFrame.minY,
+            width: visibleFrame.width / 2,
+            height: visibleFrame.height * 0.9
+        )
+
+        XCTAssertEqual(
+            WindowGeometry.nextTarget(currentFrame: constrained, candidates: targets),
+            targets[1]
+        )
+    }
+
+    func testStatisticsNameDistinguishesCycleTargets() {
+        XCTAssertEqual(
+            WindowControlCatalog.targetTitle(for: .upperLeft, candidateIndex: 0),
+            "左上区域 · 半宽"
+        )
+        XCTAssertEqual(
+            WindowControlCatalog.targetTitle(for: .upperLeft, candidateIndex: 1),
+            "左上区域 · 三分之一宽"
+        )
+        XCTAssertEqual(
+            WindowControlCatalog.targetTitle(for: .centerWindow, candidateIndex: 0),
+            "窗口居中"
+        )
+        XCTAssertEqual(
+            WindowControlCatalog.targetTitle(for: .maximize, candidateIndex: 1),
+            "铺满当前屏幕"
+        )
+        XCTAssertEqual(
+            WindowControlCatalog.statisticsID(for: .upperLeft, candidateIndex: 1),
+            "upperLeft.1"
+        )
+        XCTAssertEqual(
+            WindowControlCatalog.statisticsID(for: .centerWindow, candidateIndex: 0),
+            "centerWindow"
+        )
+        XCTAssertTrue(
+            WindowControlCatalog.layoutCommands.allSatisfy {
+                $0.frames.count == $0.targetTitles.count
+            }
         )
     }
 

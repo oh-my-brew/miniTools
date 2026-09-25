@@ -17,14 +17,8 @@ final class WindowControlController {
         cursorHighlightStyles: Set<CursorHighlightStyle>
     ) {
         let usesSystemWindowActions = settings.usesSystemWindowActions
-        let title = WindowControlCatalog.descriptors.first(where: { $0.id == id })?.title
-            ?? "窗口操作"
         if let command = WindowControlCatalog.layoutCommand(for: id) {
-            performWindowAction(
-                id: id,
-                title: title,
-                showsImplementationToast: usesSystemWindowActions
-            ) {
+            performWindowAction(id: id) {
                 try await WindowLayoutService.applyLayout(
                     command,
                     usesSystemWindowActions: usesSystemWindowActions
@@ -35,11 +29,7 @@ final class WindowControlController {
 
         switch id {
         case .moveWindowToNextScreen:
-            performWindowAction(
-                id: id,
-                title: title,
-                showsImplementationToast: usesSystemWindowActions
-            ) {
+            performWindowAction(id: id) {
                 try await WindowLayoutService.moveFocusedWindowToNextScreen(
                     usesSystemWindowActions: usesSystemWindowActions
                 )
@@ -47,11 +37,7 @@ final class WindowControlController {
         case .movePointerToNextScreen:
             movePointerToNextScreen(cursorHighlightStyles: cursorHighlightStyles)
         case .centerWindow:
-            performWindowAction(
-                id: id,
-                title: title,
-                showsImplementationToast: usesSystemWindowActions
-            ) {
+            performWindowAction(id: id) {
                 try await WindowLayoutService.centerFocusedWindow(
                     usesSystemWindowActions: usesSystemWindowActions
                 )
@@ -84,24 +70,27 @@ final class WindowControlController {
 
     private func performWindowAction(
         id: WindowControlID,
-        title: String,
-        showsImplementationToast: Bool,
-        _ action: @escaping () async throws -> WindowActionImplementation
+        _ action: @escaping () async throws -> WindowActionOutcome
     ) {
         Task { [weak self] in
             do {
-                let implementation = try await action()
+                let outcome = try await action()
                 guard let self else { return }
+                let title = WindowControlCatalog.targetTitle(
+                    for: id,
+                    candidateIndex: outcome.candidateIndex
+                )
                 usageStatistics.record(
-                    id: id.rawValue,
+                    id: WindowControlCatalog.statisticsID(
+                        for: id,
+                        candidateIndex: outcome.candidateIndex
+                    ),
                     title: title,
                     category: .windowManagement
                 )
-                if showsImplementationToast {
-                    feedbackController.showImplementation(
-                        implementation,
-                        actionTitle: title
-                    )
+                // 只有真正调用到 macOS 原生能力时才提示来源。
+                if outcome.implementation == .macOSNative {
+                    feedbackController.showNativeAction(title: title)
                 }
             } catch {
                 self?.report(error)

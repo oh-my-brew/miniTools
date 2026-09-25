@@ -9,11 +9,9 @@ final class WindowActionFeedbackController {
         show(message, position: .topCenter, duration: 1.35)
     }
 
-    func showImplementation(
-        _ implementation: WindowActionImplementation,
-        actionTitle: String
-    ) {
-        show("\(implementation.title) · \(actionTitle)", position: .topRight, duration: 1.15)
+    /// 仅在确实调用了 macOS 原生窗口能力时提示。
+    func showNativeAction(title: String) {
+        show("macOS 原生 · \(title)", position: .topRight, duration: 1.15)
     }
 
     private enum Position {
