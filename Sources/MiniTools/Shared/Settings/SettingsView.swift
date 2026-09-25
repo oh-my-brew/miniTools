@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 private enum SettingsCategory: String, CaseIterable, Identifiable {
@@ -31,7 +30,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .closedLidRunning:
             "查看合盖运行服务状态与最近关闭记录。"
         case .dsStoreManagement:
-            "清理所选目录中的 .DS_Store，并按需持续监控。"
+            "清理磁盘中的 .DS_Store，并按需持续监控。"
         case .mouseBindings:
             "为 Button 4、Button 5 分配点击和方向拖动动作。"
         case .cursorAnimation:
@@ -327,34 +326,20 @@ private struct SettingsCategoryDetail: View {
         } header: {
             Text("功能")
         } footer: {
-            Text("默认关闭。只监控下方明确选择的目录，不会监听或遍历整个磁盘。")
+            Text("默认关闭。开启后使用 FSEvents 监听磁盘根目录。")
         }
 
         Section {
-            ForEach(settings.dsStoreMonitoredDirectoryPaths, id: \.self) { path in
-                HStack {
-                    Image(systemName: "folder")
-                        .foregroundStyle(.secondary)
-                    Text(path)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(path)
-                    Spacer()
-                    Button("移除") {
-                        dsStoreManagementController.removeDirectory(path: path)
-                    }
-                    .buttonStyle(.borderless)
-                }
-            }
             HStack {
-                Button("选择目录…", action: chooseDSStoreDirectories)
-                Button("立即清理所选目录") {
+                LabeledContent("清理范围") {
+                    Text("磁盘根目录（/）")
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("立即清理") {
                     dsStoreManagementController.cleanNow()
                 }
-                .disabled(
-                    settings.dsStoreMonitoredDirectoryPaths.isEmpty
-                        || dsStoreManagementController.isCleaning
-                )
+                .disabled(dsStoreManagementController.isCleaning)
                 if dsStoreManagementController.isCleaning {
                     ProgressView().controlSize(.small)
                 }
@@ -362,7 +347,7 @@ private struct SettingsCategoryDetail: View {
         } header: {
             Text("目录")
         } footer: {
-            Text("清理会递归处理所选目录，并跳过废纸篓、系统目录、应用包和无法读取的目录。")
+            Text("清理会从 / 开始递归，并跳过废纸篓、系统目录、应用包、符号链接和无法读取的目录。")
         }
 
         Section {
@@ -387,7 +372,7 @@ private struct SettingsCategoryDetail: View {
         } header: {
             Text("持续运行")
         } footer: {
-            Text("登录启动作用于整个 miniTools；启用 DS_Store 管理后，应用运行期间持续监控所选目录。")
+            Text("登录启动作用于整个 miniTools；启用 DS_Store 管理后，应用运行期间持续监控磁盘。")
         }
 
         if let error = dsStoreManagementController.lastError {
@@ -397,18 +382,6 @@ private struct SettingsCategoryDetail: View {
                     .textSelection(.enabled)
             }
         }
-    }
-
-    private func chooseDSStoreDirectories() {
-        let panel = NSOpenPanel()
-        panel.title = "选择要管理 .DS_Store 的目录"
-        panel.prompt = "选择"
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = true
-        panel.resolvesAliases = true
-        guard panel.runModal() == .OK else { return }
-        dsStoreManagementController.addDirectories(panel.urls)
     }
 
     private func shortcutRow(

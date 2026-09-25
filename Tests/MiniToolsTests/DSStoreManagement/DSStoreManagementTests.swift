@@ -20,10 +20,16 @@ final class DSStoreManagementTests: XCTestCase {
         XCTAssertTrue(limiter.shouldReport(now: 30))
     }
 
-    func testPathPolicyRejectsRootAndSystemDirectories() {
-        XCTAssertNil(DSStorePathPolicy.normalizedSelectableDirectory(URL(fileURLWithPath: "/")))
-        XCTAssertNil(DSStorePathPolicy.normalizedSelectableDirectory(URL(fileURLWithPath: "/System")))
-        XCTAssertNil(DSStorePathPolicy.normalizedSelectableDirectory(URL(fileURLWithPath: "/Applications")))
+    func testPathPolicyAllowsRootAndRejectsSystemDirectories() {
+        XCTAssertEqual(
+            DSStorePathPolicy.normalizedMonitoredDirectory(URL(fileURLWithPath: "/"))?.path,
+            "/"
+        )
+        XCTAssertNil(DSStorePathPolicy.normalizedMonitoredDirectory(URL(fileURLWithPath: "/System")))
+        XCTAssertNil(DSStorePathPolicy.normalizedMonitoredDirectory(URL(fileURLWithPath: "/Applications")))
+        XCTAssertNil(DSStorePathPolicy.normalizedMonitoredDirectory(URL(fileURLWithPath: "/Volumes")))
+        XCTAssertNil(DSStorePathPolicy.normalizedMonitoredDirectory(URL(fileURLWithPath: "/dev")))
+        XCTAssertNil(DSStorePathPolicy.normalizedMonitoredDirectory(URL(fileURLWithPath: "/opt")))
     }
 
     func testCleanerCountsOnlySuccessfullyDeletedFilesAndSkipsPackages() throws {
@@ -46,7 +52,7 @@ final class DSStoreManagementTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: excluded.path))
     }
 
-    func testPathPolicyDoesNotAllowDeletionOutsideSelectedRoot() throws {
+    func testPathPolicyDoesNotAllowDeletionOutsideMonitoredRoot() throws {
         let root = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("MiniToolsDSStoreRoot-\(UUID().uuidString)", isDirectory: true)
         let outside = FileManager.default.homeDirectoryForCurrentUser
@@ -59,6 +65,23 @@ final class DSStoreManagementTests: XCTestCase {
         XCTAssertTrue(
             DSStorePathPolicy.canDelete(
                 root.appendingPathComponent(".DS_Store"),
+                below: [root]
+            )
+        )
+    }
+
+    func testRootPolicyRejectsMountedAndSystemTrees() {
+        let root = URL(fileURLWithPath: "/", isDirectory: true)
+
+        XCTAssertFalse(
+            DSStorePathPolicy.canDelete(
+                URL(fileURLWithPath: "/Volumes/External/.DS_Store"),
+                below: [root]
+            )
+        )
+        XCTAssertFalse(
+            DSStorePathPolicy.canDelete(
+                URL(fileURLWithPath: "/opt/homebrew/.DS_Store"),
                 below: [root]
             )
         )

@@ -11,7 +11,7 @@ enum DSStoreCleaner {
         let errorStore = DSStoreCleanupErrorStore()
 
         for directory in directories {
-            guard let root = DSStorePathPolicy.normalizedSelectableDirectory(directory) else {
+            guard let root = DSStorePathPolicy.normalizedMonitoredDirectory(directory) else {
                 errorStore.set("无法访问目录：\(directory.path)")
                 continue
             }
