@@ -213,7 +213,7 @@ enum WindowGeometry {
             let displayID = (screen.deviceDescription[
                 NSDeviceDescriptionKey("NSScreenNumber")
             ] as? NSNumber)?.uint32Value
-            WindowLayoutScreenGeometry(
+            return WindowLayoutScreenGeometry(
                 fullFrame: appKitToAccessibility(screen.frame, primaryScreenMaxY: primaryMaxY),
                 visibleFrame: appKitToAccessibility(screen.visibleFrame, primaryScreenMaxY: primaryMaxY),
                 localizedName: screen.localizedName,
