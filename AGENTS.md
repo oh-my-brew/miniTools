@@ -174,6 +174,7 @@ git diff --check
 - `Support/Info.plist` 的展示版本使用 `YYYY.MM.DD`。
 - Git 标签使用 `vYYYY.MM.DD.N`；GitHub Release 产物和 Homebrew Cask 使用不带 `v` 的 `YYYY.MM.DD.N`，同一天从 `1` 开始递增。
 - `.github/workflows/ci.yml` 负责 push、PR 和手动 CI；`.github/workflows/release.yml` 只由 `v*` 标签触发，并校验标签日期与 Info.plist 一致。
+- `.github/workflows/codeql.yml` 负责 code scanning，仓库已关闭 CodeQL default setup：`actions` 和 `ruby` 在 push、PR 和定时任务上运行；Swift 提取器要先完整构建一遍工程（实测 13–18 分钟），只在每周定时、手动触发和合并后的推送里运行，PR 上跳过，不要改回让每次 PR 都跑 Swift。
 - 正常顺序是：更新展示版本并提交 → 推送 → 等待 CI 成功 → 创建带注释标签并推送 → 等待 Release 完成 → 触发 Tap Autobump。
 - Homebrew Tap 位于同级仓库 `../homebrew-tap`，Cask 是 `Casks/minitools.rb`。
 - Tap 的 Autobump 只创建升级 PR，不会自动合并。BrewTestBot 通过后，合并仍是单独的外部写操作。
