@@ -196,17 +196,25 @@ final class WindowManagementTests: XCTestCase {
         )
     }
 
-    func testSideCommandsStartAtHalfWidthThenThirdWidth() throws {
+    func testSideCommandsStartAtHalfWidthThenTwoThirdsWidth() throws {
         let left = try XCTUnwrap(WindowControlCatalog.layoutCommand(for: .left))
         let right = try XCTUnwrap(WindowControlCatalog.layoutCommand(for: .right))
 
-        XCTAssertEqual(left.frames.map(\.width), [0.5, 1.0 / 3.0])
+        XCTAssertEqual(left.frames.map(\.width), [0.5, 2.0 / 3.0])
         XCTAssertEqual(left.frames.map(\.x), [0, 0])
-        XCTAssertEqual(right.frames.map(\.width), [0.5, 1.0 / 3.0])
-        XCTAssertEqual(right.frames.map(\.x), [0.5, 2.0 / 3.0])
+        XCTAssertEqual(right.frames.map(\.width), [0.5, 2.0 / 3.0])
+        XCTAssertEqual(right.frames.map(\.x), [0.5, 1.0 / 3.0])
         XCTAssertEqual(
             WindowControlCatalog.descriptors.first(where: { $0.id == .left })?.subtitle,
-            "二分之一 ↔ 三分之一宽"
+            "二分之一 ↔ 三分之二宽"
+        )
+        XCTAssertEqual(
+            WindowControlCatalog.descriptors.first(where: { $0.id == .right })?.subtitle,
+            "二分之一 ↔ 三分之二宽"
+        )
+        XCTAssertEqual(
+            WindowControlCatalog.targetTitle(for: .right, candidateIndex: 1),
+            "右侧区域 · 三分之二宽"
         )
     }
 
@@ -255,7 +263,7 @@ final class WindowManagementTests: XCTestCase {
             rightTargets[0]
         )
 
-        // 左侧区域：满高左半屏 → 三分之一宽；再次按左半屏 → 回到半宽。
+        // 左侧区域：满高左半屏 → 三分之二宽；再次按左半屏 → 回到二分之一宽。
         XCTAssertEqual(
             WindowGeometry.nextTarget(currentFrame: leftTargets[0], candidates: leftTargets),
             leftTargets[1]
