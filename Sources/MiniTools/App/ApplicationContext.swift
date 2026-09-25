@@ -7,6 +7,7 @@ final class ApplicationContext: ObservableObject {
     @Published private(set) var shortcutCoordinator: GlobalShortcutCoordinator?
     @Published private(set) var mouseBindingCoordinator: MouseBindingCoordinator?
     @Published private(set) var closedLidRunningController: ClosedLidRunningController?
+    @Published private(set) var dsStoreManagementController: DSStoreManagementController?
 
     init(settings: AppSettings = AppSettings()) {
         self.settings = settings
@@ -22,6 +23,10 @@ final class ApplicationContext: ObservableObject {
 
     func install(closedLidRunningController: ClosedLidRunningController) {
         self.closedLidRunningController = closedLidRunningController
+    }
+
+    func install(dsStoreManagementController: DSStoreManagementController) {
+        self.dsStoreManagementController = dsStoreManagementController
     }
 
     func previewCursorHighlight(_ style: CursorHighlightStyle) {

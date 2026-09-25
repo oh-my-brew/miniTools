@@ -7,6 +7,7 @@ final class SettingsWindowController {
     private let shortcutCoordinator: GlobalShortcutCoordinator
     private let mouseBindingCoordinator: MouseBindingCoordinator
     private let closedLidRunningController: ClosedLidRunningController
+    private let dsStoreManagementController: DSStoreManagementController
     private let previewCursorHighlight: (CursorHighlightStyle) -> Void
     private lazy var window = makeWindow()
 
@@ -15,12 +16,14 @@ final class SettingsWindowController {
         shortcutCoordinator: GlobalShortcutCoordinator,
         mouseBindingCoordinator: MouseBindingCoordinator,
         closedLidRunningController: ClosedLidRunningController,
+        dsStoreManagementController: DSStoreManagementController,
         previewCursorHighlight: @escaping (CursorHighlightStyle) -> Void
     ) {
         self.settings = settings
         self.shortcutCoordinator = shortcutCoordinator
         self.mouseBindingCoordinator = mouseBindingCoordinator
         self.closedLidRunningController = closedLidRunningController
+        self.dsStoreManagementController = dsStoreManagementController
         self.previewCursorHighlight = previewCursorHighlight
     }
 
@@ -35,6 +38,7 @@ final class SettingsWindowController {
             shortcutCoordinator: shortcutCoordinator,
             mouseBindingCoordinator: mouseBindingCoordinator,
             closedLidRunningController: closedLidRunningController,
+            dsStoreManagementController: dsStoreManagementController,
             previewCursorHighlight: previewCursorHighlight
         )
         let hostingController = NSHostingController(rootView: content)
