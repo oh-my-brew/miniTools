@@ -211,6 +211,29 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertTrue(AppSettings(defaults: defaults).closedLidRunningEnabled)
     }
 
+    @MainActor
+    func testDSStoreManagementDefaultsToDisabledAndPersistsConfiguration() throws {
+        let (defaults, suiteName) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults)
+
+        XCTAssertFalse(settings.dsStoreManagementEnabled)
+        XCTAssertTrue(settings.dsStoreMonitoredDirectoryPaths.isEmpty)
+        XCTAssertFalse(settings.launchAtLoginEnabled)
+
+        settings.updateDSStoreManagementEnabled(true)
+        settings.updateDSStoreMonitoredDirectoryPaths([
+            "/Users/example/Projects/../Projects",
+            "/Users/example/Projects"
+        ])
+        settings.updateLaunchAtLoginEnabled(true)
+
+        let restored = AppSettings(defaults: defaults)
+        XCTAssertTrue(restored.dsStoreManagementEnabled)
+        XCTAssertEqual(restored.dsStoreMonitoredDirectoryPaths, ["/Users/example/Projects"])
+        XCTAssertTrue(restored.launchAtLoginEnabled)
+    }
+
     private func makeDefaults() throws -> (UserDefaults, String) {
         let suiteName = "MiniToolsTests.AppSettings.\(UUID().uuidString)"
         return (try XCTUnwrap(UserDefaults(suiteName: suiteName)), suiteName)

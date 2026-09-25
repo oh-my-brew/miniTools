@@ -9,6 +9,9 @@ final class AppController: NSObject {
     private lazy var closedLidRunningController = ClosedLidRunningController(
         settings: settings
     )
+    private lazy var dsStoreManagementController = DSStoreManagementController(
+        settings: settings
+    )
     private let featurePanelController: FeaturePanelController
     private lazy var commandDispatcher = AppCommandDispatcher(
         settings: settings,
@@ -54,12 +57,14 @@ final class AppController: NSObject {
         applicationContext.install(shortcutCoordinator: shortcutCoordinator)
         applicationContext.install(mouseBindingCoordinator: mouseBindingCoordinator)
         applicationContext.install(closedLidRunningController: closedLidRunningController)
+        applicationContext.install(dsStoreManagementController: dsStoreManagementController)
 
         settingsWindowController = SettingsWindowController(
             settings: settings,
             shortcutCoordinator: shortcutCoordinator,
             mouseBindingCoordinator: mouseBindingCoordinator,
             closedLidRunningController: closedLidRunningController,
+            dsStoreManagementController: dsStoreManagementController,
             previewCursorHighlight: applicationContext.previewCursorHighlight
         )
         featurePanelController.onOpenSettings = { [weak self] in
@@ -86,6 +91,7 @@ final class AppController: NSObject {
         }
         statusMenuController.start()
         closedLidRunningController.start()
+        dsStoreManagementController.start()
         shortcutCoordinator.start()
         mouseBindingCoordinator.start()
         updateStatusMenu()
@@ -110,6 +116,7 @@ final class AppController: NSObject {
         featurePanelPreparationTask = nil
         mouseBindingCoordinator?.stop()
         closedLidRunningController.stop()
+        dsStoreManagementController.stop()
         featurePanelController.stop()
     }
 

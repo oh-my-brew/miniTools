@@ -1,9 +1,11 @@
+import AppKit
 import SwiftUI
 
 private enum SettingsCategory: String, CaseIterable, Identifiable {
     case featurePanel
     case windowManagement
     case closedLidRunning
+    case dsStoreManagement
     case mouseBindings
     case cursorAnimation
 
@@ -14,6 +16,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .featurePanel: "工具面板"
         case .windowManagement: "窗口管理"
         case .closedLidRunning: "合盖运行"
+        case .dsStoreManagement: "DS_Store 管理"
         case .mouseBindings: "鼠标侧键"
         case .cursorAnimation: "定位动画"
         }
@@ -27,6 +30,8 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
             "配置窗口布局、跨屏操作与全局快捷键。"
         case .closedLidRunning:
             "查看合盖运行服务状态与最近关闭记录。"
+        case .dsStoreManagement:
+            "清理所选目录中的 .DS_Store，并按需持续监控。"
         case .mouseBindings:
             "为 Button 4、Button 5 分配点击和方向拖动动作。"
         case .cursorAnimation:
@@ -39,6 +44,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .featurePanel: "hammer"
         case .windowManagement: "macwindow"
         case .closedLidRunning: "laptopcomputer"
+        case .dsStoreManagement: "doc.badge.gearshape"
         case .mouseBindings: "computermouse"
         case .cursorAnimation: "cursorarrow.rays"
         }
@@ -51,12 +57,14 @@ struct SettingsSceneRoot: View {
     var body: some View {
         if let shortcutCoordinator = context.shortcutCoordinator,
            let mouseBindingCoordinator = context.mouseBindingCoordinator,
-           let closedLidRunningController = context.closedLidRunningController {
+           let closedLidRunningController = context.closedLidRunningController,
+           let dsStoreManagementController = context.dsStoreManagementController {
             SettingsView(
                 settings: context.settings,
                 shortcutCoordinator: shortcutCoordinator,
                 mouseBindingCoordinator: mouseBindingCoordinator,
                 closedLidRunningController: closedLidRunningController,
+                dsStoreManagementController: dsStoreManagementController,
                 previewCursorHighlight: context.previewCursorHighlight
             )
         } else {
@@ -71,6 +79,7 @@ struct SettingsView: View {
     @ObservedObject var shortcutCoordinator: GlobalShortcutCoordinator
     @ObservedObject var mouseBindingCoordinator: MouseBindingCoordinator
     @ObservedObject var closedLidRunningController: ClosedLidRunningController
+    @ObservedObject var dsStoreManagementController: DSStoreManagementController
     let previewCursorHighlight: (CursorHighlightStyle) -> Void
     @State private var selectedCategory: SettingsCategory? = .featurePanel
 
@@ -89,6 +98,7 @@ struct SettingsView: View {
                 shortcutCoordinator: shortcutCoordinator,
                 mouseBindingCoordinator: mouseBindingCoordinator,
                 closedLidRunningController: closedLidRunningController,
+                dsStoreManagementController: dsStoreManagementController,
                 previewCursorHighlight: previewCursorHighlight
             )
             .id(selectedCategory)
@@ -104,6 +114,7 @@ private struct SettingsCategoryDetail: View {
     @ObservedObject var shortcutCoordinator: GlobalShortcutCoordinator
     @ObservedObject var mouseBindingCoordinator: MouseBindingCoordinator
     @ObservedObject var closedLidRunningController: ClosedLidRunningController
+    @ObservedObject var dsStoreManagementController: DSStoreManagementController
     let previewCursorHighlight: (CursorHighlightStyle) -> Void
     @State private var showsCompactTitle = false
 
@@ -120,6 +131,8 @@ private struct SettingsCategoryDetail: View {
                 windowManagementSettings
             case .closedLidRunning:
                 closedLidRunningSettings
+            case .dsStoreManagement:
+                dsStoreManagementSettings
             case .mouseBindings:
                 MouseBindingSettingsView(
                     settings: settings,
@@ -286,6 +299,116 @@ private struct SettingsCategoryDetail: View {
             Text(closedLidRunningController.helperState.title)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    @ViewBuilder
+    private var dsStoreManagementSettings: some View {
+        Section {
+            Toggle(
+                "启用 DS_Store 管理",
+                isOn: Binding(
+                    get: { settings.dsStoreManagementEnabled },
+                    set: { dsStoreManagementController.setFeatureEnabled($0) }
+                )
+            )
+            LabeledContent("监控状态") {
+                Text(dsStoreManagementController.isMonitoring ? "正在监控" : "未监控")
+                    .foregroundStyle(
+                        dsStoreManagementController.isMonitoring
+                            ? Color.green
+                            : Color.secondary
+                    )
+            }
+            LabeledContent("本次删除") {
+                Text("\(dsStoreManagementController.deletedCount) 个")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("功能")
+        } footer: {
+            Text("默认关闭。只监控下方明确选择的目录，不会监听或遍历整个磁盘。")
+        }
+
+        Section {
+            ForEach(settings.dsStoreMonitoredDirectoryPaths, id: \.self) { path in
+                HStack {
+                    Image(systemName: "folder")
+                        .foregroundStyle(.secondary)
+                    Text(path)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(path)
+                    Spacer()
+                    Button("移除") {
+                        dsStoreManagementController.removeDirectory(path: path)
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+            HStack {
+                Button("选择目录…", action: chooseDSStoreDirectories)
+                Button("立即清理所选目录") {
+                    dsStoreManagementController.cleanNow()
+                }
+                .disabled(
+                    settings.dsStoreMonitoredDirectoryPaths.isEmpty
+                        || dsStoreManagementController.isCleaning
+                )
+                if dsStoreManagementController.isCleaning {
+                    ProgressView().controlSize(.small)
+                }
+            }
+        } header: {
+            Text("目录")
+        } footer: {
+            Text("清理会递归处理所选目录，并跳过废纸篓、系统目录、应用包和无法读取的目录。")
+        }
+
+        Section {
+            Toggle(
+                "登录时启动 miniTools",
+                isOn: Binding(
+                    get: { settings.launchAtLoginEnabled },
+                    set: { dsStoreManagementController.setLaunchAtLoginEnabled($0) }
+                )
+            )
+            LabeledContent("登录项状态") {
+                HStack {
+                    Text(dsStoreManagementController.loginItemState.title)
+                        .foregroundStyle(.secondary)
+                    if dsStoreManagementController.loginItemState == .requiresApproval {
+                        Button("前往批准") {
+                            dsStoreManagementController.openLoginItemSettings()
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("持续运行")
+        } footer: {
+            Text("登录启动作用于整个 miniTools；启用 DS_Store 管理后，应用运行期间持续监控所选目录。")
+        }
+
+        if let error = dsStoreManagementController.lastError {
+            Section("最近一次错误") {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private func chooseDSStoreDirectories() {
+        let panel = NSOpenPanel()
+        panel.title = "选择要管理 .DS_Store 的目录"
+        panel.prompt = "选择"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        panel.resolvesAliases = true
+        guard panel.runModal() == .OK else { return }
+        dsStoreManagementController.addDirectories(panel.urls)
     }
 
     private func shortcutRow(
