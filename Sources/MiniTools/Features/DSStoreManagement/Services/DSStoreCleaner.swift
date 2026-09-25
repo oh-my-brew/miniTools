@@ -21,7 +21,7 @@ enum DSStoreCleaner {
             guard let enumerator = FileManager.default.enumerator(
                 at: root,
                 includingPropertiesForKeys: keys,
-                options: [.skipsPackageDescendants, .skipsMounts],
+                options: [.skipsPackageDescendants],
                 errorHandler: { url, error in
                     errorStore.set("无法读取 \(url.path)：\(error.localizedDescription)")
                     return true

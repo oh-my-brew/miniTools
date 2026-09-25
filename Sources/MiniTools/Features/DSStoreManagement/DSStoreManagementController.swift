@@ -63,9 +63,10 @@ final class DSStoreManagementController: ObservableObject {
     func cleanNow() {
         guard !isCleaning else { return }
         isCleaning = true
+        let monitoredRoot = Self.monitoredRoot
         cleanupTask = Task { [weak self] in
             let result = await Task.detached {
-                DSStoreCleaner.clean(directories: [Self.monitoredRoot])
+                DSStoreCleaner.clean(directories: [monitoredRoot])
             }.value
             guard let self, !Task.isCancelled else { return }
             deletedCount += result.deletedCount
