@@ -93,13 +93,13 @@ enum WindowControlCatalog {
         ),
         .init(
             id: .left,
-            frames: [.init(0, 0, 0.5, 1), .init(0, 0, 2.0 / 3.0, 1)],
-            targetTitles: ["左侧区域 · 二分之一宽", "左侧区域 · 三分之二宽"]
+            frames: [.init(0, 0, 2.0 / 3.0, 1), .init(0, 0, 0.5, 1)],
+            targetTitles: ["左侧区域 · 三分之二宽", "左侧区域 · 二分之一宽"]
         ),
         .init(
             id: .right,
-            frames: [.init(0.5, 0, 0.5, 1), .init(1.0 / 3.0, 0, 2.0 / 3.0, 1)],
-            targetTitles: ["右侧区域 · 二分之一宽", "右侧区域 · 三分之二宽"]
+            frames: [.init(1.0 / 3.0, 0, 2.0 / 3.0, 1), .init(0.5, 0, 0.5, 1)],
+            targetTitles: ["右侧区域 · 三分之二宽", "右侧区域 · 二分之一宽"]
         ),
         .init(
             id: .horizontalHalves,
@@ -108,8 +108,12 @@ enum WindowControlCatalog {
         ),
         .init(
             id: .verticalThirds,
-            frames: [.init(2.0 / 3.0, 0, 1.0 / 3.0, 1), .init(0, 0, 1.0 / 3.0, 1)],
-            targetTitles: ["右侧三分之一", "左侧三分之一"]
+            frames: [
+                .init(0, 0, 1.0 / 3.0, 1),
+                .init(1.0 / 3.0, 0, 1.0 / 3.0, 1),
+                .init(2.0 / 3.0, 0, 1.0 / 3.0, 1)
+            ],
+            targetTitles: ["左侧三分之一", "中间三分之一", "右侧三分之一"]
         ),
         .init(
             id: .maximize,
@@ -123,10 +127,15 @@ enum WindowControlCatalog {
         descriptor(.upperRight, "右上区域", "半宽 ↔ 三分之一宽", kVK_ANSI_I),
         descriptor(.lowerLeft, "左下区域", "半宽 ↔ 三分之一宽", kVK_ANSI_J),
         descriptor(.lowerRight, "右下区域", "半宽 ↔ 三分之一宽", kVK_ANSI_K),
-        descriptor(.left, "左侧区域", "二分之一 ↔ 三分之二宽", kVK_ANSI_H),
-        descriptor(.right, "右侧区域", "二分之一 ↔ 三分之二宽", kVK_ANSI_L),
+        descriptor(.left, "左侧区域", "三分之二 ↔ 二分之一宽", kVK_ANSI_H),
+        descriptor(.right, "右侧区域", "三分之二 ↔ 二分之一宽", kVK_ANSI_L),
         descriptor(.horizontalHalves, "上下半屏切换", "上半屏 ↔ 下半屏", kVK_ANSI_Y),
-        descriptor(.verticalThirds, "左右三分之一切换", "右侧三分之一 ↔ 左侧三分之一", kVK_ANSI_O),
+        descriptor(
+            .verticalThirds,
+            "左中右三分之一切换",
+            "左侧三分之一 ↔ 中间三分之一 ↔ 右侧三分之一",
+            kVK_ANSI_O
+        ),
         descriptor(.maximize, "铺满当前屏幕", "使用屏幕可用区域", kVK_ANSI_Backslash),
         descriptor(.centerWindow, "窗口居中", "保持窗口当前尺寸", kVK_Return),
         descriptor(.moveWindowToNextScreen, "窗口移至下一屏", "保留窗口相对位置", kVK_ANSI_P),

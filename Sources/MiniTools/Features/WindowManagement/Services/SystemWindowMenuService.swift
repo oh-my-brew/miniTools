@@ -40,8 +40,8 @@ enum SystemWindowActionResolver {
         case (.upperRight, 0): .topRight
         case (.lowerLeft, 0): .bottomLeft
         case (.lowerRight, 0): .bottomRight
-        case (.left, 0): .left
-        case (.right, 0): .right
+        case (.left, 1): .left
+        case (.right, 1): .right
         case (.horizontalHalves, 0): .top
         case (.horizontalHalves, 1): .bottom
         case (.maximize, _): .fill

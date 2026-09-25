@@ -77,7 +77,15 @@ final class WindowManagementTests: XCTestCase {
             [.upperLeft, .upperRight, .lowerLeft, .lowerRight, .left, .right,
              .horizontalHalves, .verticalThirds, .maximize]
         )
-        XCTAssertTrue(WindowControlCatalog.layoutCommands.allSatisfy { $0.frames.count == 2 })
+        XCTAssertTrue(
+            WindowControlCatalog.layoutCommands
+                .filter { $0.id != .verticalThirds }
+                .allSatisfy { $0.frames.count == 2 }
+        )
+        XCTAssertEqual(
+            WindowControlCatalog.layoutCommand(for: .verticalThirds)?.frames.count,
+            3
+        )
         XCTAssertEqual(WindowControlCatalog.descriptors.count, 12)
         XCTAssertEqual(
             WindowControlCatalog.windowLayoutDescriptors.map(\.id),
@@ -98,19 +106,19 @@ final class WindowManagementTests: XCTestCase {
         XCTAssertNil(
             SystemWindowActionResolver.layoutAction(for: .upperLeft, candidateIndex: 1)
         )
+        XCTAssertNil(
+            SystemWindowActionResolver.layoutAction(for: .left, candidateIndex: 0)
+        )
         XCTAssertEqual(
-            SystemWindowActionResolver.layoutAction(for: .left, candidateIndex: 0),
+            SystemWindowActionResolver.layoutAction(for: .left, candidateIndex: 1),
             .left
         )
         XCTAssertNil(
-            SystemWindowActionResolver.layoutAction(for: .left, candidateIndex: 1)
+            SystemWindowActionResolver.layoutAction(for: .right, candidateIndex: 0)
         )
         XCTAssertEqual(
-            SystemWindowActionResolver.layoutAction(for: .right, candidateIndex: 0),
+            SystemWindowActionResolver.layoutAction(for: .right, candidateIndex: 1),
             .right
-        )
-        XCTAssertNil(
-            SystemWindowActionResolver.layoutAction(for: .right, candidateIndex: 1)
         )
         XCTAssertEqual(
             SystemWindowActionResolver.layoutAction(for: .horizontalHalves, candidateIndex: 1),
@@ -118,6 +126,9 @@ final class WindowManagementTests: XCTestCase {
         )
         XCTAssertNil(
             SystemWindowActionResolver.layoutAction(for: .verticalThirds, candidateIndex: 0)
+        )
+        XCTAssertNil(
+            SystemWindowActionResolver.layoutAction(for: .verticalThirds, candidateIndex: 2)
         )
         XCTAssertEqual(
             SystemWindowActionResolver.layoutAction(for: .maximize, candidateIndex: 1),
@@ -196,25 +207,71 @@ final class WindowManagementTests: XCTestCase {
         )
     }
 
-    func testSideCommandsStartAtHalfWidthThenTwoThirdsWidth() throws {
+    func testSideCommandsStartAtTwoThirdsThenHalfWidth() throws {
         let left = try XCTUnwrap(WindowControlCatalog.layoutCommand(for: .left))
         let right = try XCTUnwrap(WindowControlCatalog.layoutCommand(for: .right))
 
-        XCTAssertEqual(left.frames.map(\.width), [0.5, 2.0 / 3.0])
+        XCTAssertEqual(left.frames.map(\.width), [2.0 / 3.0, 0.5])
         XCTAssertEqual(left.frames.map(\.x), [0, 0])
-        XCTAssertEqual(right.frames.map(\.width), [0.5, 2.0 / 3.0])
-        XCTAssertEqual(right.frames.map(\.x), [0.5, 1.0 / 3.0])
+        XCTAssertEqual(right.frames.map(\.width), [2.0 / 3.0, 0.5])
+        XCTAssertEqual(right.frames.map(\.x), [1.0 / 3.0, 0.5])
         XCTAssertEqual(
             WindowControlCatalog.descriptors.first(where: { $0.id == .left })?.subtitle,
-            "二分之一 ↔ 三分之二宽"
+            "三分之二 ↔ 二分之一宽"
         )
         XCTAssertEqual(
             WindowControlCatalog.descriptors.first(where: { $0.id == .right })?.subtitle,
-            "二分之一 ↔ 三分之二宽"
+            "三分之二 ↔ 二分之一宽"
+        )
+        XCTAssertEqual(
+            WindowControlCatalog.targetTitle(for: .right, candidateIndex: 0),
+            "右侧区域 · 三分之二宽"
         )
         XCTAssertEqual(
             WindowControlCatalog.targetTitle(for: .right, candidateIndex: 1),
-            "右侧区域 · 三分之二宽"
+            "右侧区域 · 二分之一宽"
+        )
+    }
+
+    func testThirdsCommandCyclesLeftMiddleRight() throws {
+        let thirds = try XCTUnwrap(WindowControlCatalog.layoutCommand(for: .verticalThirds))
+
+        XCTAssertEqual(thirds.frames.map(\.x), [0, 1.0 / 3.0, 2.0 / 3.0])
+        XCTAssertEqual(thirds.frames.map(\.width), [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0])
+        XCTAssertEqual(
+            WindowControlCatalog.descriptors.first(where: { $0.id == .verticalThirds })?.title,
+            "左中右三分之一切换"
+        )
+        XCTAssertEqual(
+            WindowControlCatalog.descriptors.first(where: { $0.id == .verticalThirds })?.subtitle,
+            "左侧三分之一 ↔ 中间三分之一 ↔ 右侧三分之一"
+        )
+        XCTAssertEqual(
+            WindowControlCatalog.targetTitle(for: .verticalThirds, candidateIndex: 1),
+            "中间三分之一"
+        )
+        XCTAssertEqual(
+            WindowControlCatalog.statisticsID(for: .verticalThirds, candidateIndex: 2),
+            "verticalThirds.2"
+        )
+
+        let visibleFrame = CGRect(x: 0, y: 25, width: 1600, height: 900)
+        let targets = thirds.frames.map {
+            WindowGeometry.targetFrame(for: $0, in: visibleFrame)
+        }
+
+        // 左 → 中 → 右 → 左
+        XCTAssertEqual(
+            WindowGeometry.nextTarget(currentFrame: targets[0], candidates: targets),
+            targets[1]
+        )
+        XCTAssertEqual(
+            WindowGeometry.nextTarget(currentFrame: targets[1], candidates: targets),
+            targets[2]
+        )
+        XCTAssertEqual(
+            WindowGeometry.nextTarget(currentFrame: targets[2], candidates: targets),
+            targets[0]
         )
     }
 
@@ -263,7 +320,7 @@ final class WindowManagementTests: XCTestCase {
             rightTargets[0]
         )
 
-        // 左侧区域：满高左半屏 → 三分之二宽；再次按左半屏 → 回到二分之一宽。
+        // 左侧区域：满高三分之二宽 → 二分之一宽；再按 → 回到三分之二宽。
         XCTAssertEqual(
             WindowGeometry.nextTarget(currentFrame: leftTargets[0], candidates: leftTargets),
             leftTargets[1]
