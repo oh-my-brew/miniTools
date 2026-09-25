@@ -17,6 +17,7 @@ final class EncodingConversionPanelViewModel: ObservableObject {
     @Published private(set) var focusRequestID = 0
 
     var onActionCompleted: (() -> Void)?
+    var onSuccessfulAction: ((String, String) -> Void)?
     var onCancel: (() -> Void)?
 
     private var compressionQuality: Double
@@ -268,6 +269,7 @@ final class EncodingConversionPanelViewModel: ObservableObject {
                     try client.writeClipboard(output)
                     recentActionStore.record(action.id)
                     recentActionIDs = recentActionStore.actionIDs
+                    onSuccessfulAction?(action.id, action.title)
                     isExecuting = false
                     onActionCompleted?()
                 } catch {

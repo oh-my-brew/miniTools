@@ -6,6 +6,22 @@ final class WindowActionFeedbackController {
     private var dismissWorkItem: DispatchWorkItem?
 
     func showError(_ message: String) {
+        show(message, position: .topCenter, duration: 1.35)
+    }
+
+    func showImplementation(
+        _ implementation: WindowActionImplementation,
+        actionTitle: String
+    ) {
+        show("\(implementation.title) · \(actionTitle)", position: .topRight, duration: 1.15)
+    }
+
+    private enum Position {
+        case topCenter
+        case topRight
+    }
+
+    private func show(_ message: String, position: Position, duration: TimeInterval) {
         dismissWorkItem?.cancel()
         panel?.orderOut(nil)
 
@@ -30,9 +46,17 @@ final class WindowActionFeedbackController {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame ?? NSScreen.screens.first?.visibleFrame ?? .zero
+        let originX = switch position {
+        case .topCenter: visibleFrame.midX - size.width / 2
+        case .topRight: visibleFrame.maxX - size.width - 22
+        }
+        let topInset: CGFloat = switch position {
+        case .topCenter: 90
+        case .topRight: 22
+        }
         let frame = CGRect(
-            x: visibleFrame.midX - size.width / 2,
-            y: visibleFrame.maxY - size.height - 90,
+            x: originX,
+            y: visibleFrame.maxY - size.height - topInset,
             width: size.width,
             height: size.height
         )
@@ -64,6 +88,6 @@ final class WindowActionFeedbackController {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.22, execute: closeWorkItem)
         }
         dismissWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.35, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: workItem)
     }
 }

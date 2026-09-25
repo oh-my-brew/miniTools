@@ -20,10 +20,6 @@ final class CursorHighlightController {
         show(style: style, atAppKitPoint: appKitPoint)
     }
 
-    func preview(_ style: CursorHighlightStyle) {
-        show(style: style, atAppKitPoint: NSEvent.mouseLocation)
-    }
-
     private func show(style: CursorHighlightStyle, atAppKitPoint point: CGPoint) {
         dismissWorkItem?.cancel()
         window?.orderOut(nil)

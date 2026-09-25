@@ -208,8 +208,8 @@ final class AppSettingsTests: XCTestCase {
 
     @MainActor
     func testClosedLidRunningMenuTitles() {
-        XCTAssertEqual(StatusMenuController.enableClosedLidRunningTitle, "启动合盖运行")
-        XCTAssertEqual(StatusMenuController.disableClosedLidRunningTitle, "关闭合盖运行")
+        XCTAssertEqual(StatusMenuController.toolPanelTitle, "工具面板")
+        XCTAssertEqual(StatusMenuController.closedLidRunningTitle, "合盖运行")
     }
 
     @MainActor

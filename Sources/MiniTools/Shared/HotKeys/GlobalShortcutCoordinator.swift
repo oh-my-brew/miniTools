@@ -65,6 +65,20 @@ final class GlobalShortcutCoordinator: ObservableObject {
         return true
     }
 
+    func restoreDefaultWindowControlShortcuts() {
+        // Release the current set first so swapped custom assignments cannot
+        // block one another while the defaults are restored.
+        for hotKey in windowControlHotKeys.values {
+            hotKey.unregister()
+        }
+        for descriptor in WindowControlCatalog.descriptors {
+            _ = updateWindowControlShortcut(
+                descriptor.defaultShortcut,
+                for: descriptor.id
+            )
+        }
+    }
+
     private func registerInitialPanelShortcut() {
         let configured = settings.panelShortcut
         if panelHotKey.register(configured) == noErr {

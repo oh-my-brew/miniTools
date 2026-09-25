@@ -5,7 +5,10 @@ final class AppController: NSObject {
     private let applicationContext: ApplicationContext
     private var settings: AppSettings { applicationContext.settings }
     private let statusMenuController = StatusMenuController()
-    private lazy var windowControlController = WindowControlController(settings: settings)
+    private lazy var windowControlController = WindowControlController(
+        settings: settings,
+        usageStatistics: applicationContext.usageStatistics
+    )
     private lazy var closedLidRunningController = ClosedLidRunningController(
         settings: settings
     )
@@ -27,7 +30,8 @@ final class AppController: NSObject {
     init(applicationContext: ApplicationContext) {
         self.applicationContext = applicationContext
         featurePanelController = FeaturePanelController(
-            settings: applicationContext.settings
+            settings: applicationContext.settings,
+            usageStatistics: applicationContext.usageStatistics
         )
         super.init()
     }
@@ -65,7 +69,7 @@ final class AppController: NSObject {
             mouseBindingCoordinator: mouseBindingCoordinator,
             closedLidRunningController: closedLidRunningController,
             dsStoreManagementController: dsStoreManagementController,
-            previewCursorHighlight: applicationContext.previewCursorHighlight
+            usageStatistics: applicationContext.usageStatistics
         )
         featurePanelController.onOpenSettings = { [weak self] in
             self?.showSettings()

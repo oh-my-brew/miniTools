@@ -1,51 +1,56 @@
 import SwiftUI
 
 private enum SettingsCategory: String, CaseIterable, Identifiable {
-    case featurePanel
+    case general
     case windowManagement
     case closedLidRunning
     case dsStoreManagement
     case mouseBindings
     case cursorAnimation
+    case usageStatistics
 
     var id: Self { self }
 
     var title: String {
         switch self {
-        case .featurePanel: "工具面板"
+        case .general: "通用"
         case .windowManagement: "窗口管理"
         case .closedLidRunning: "合盖运行"
         case .dsStoreManagement: "DS_Store 管理"
         case .mouseBindings: "鼠标侧键"
         case .cursorAnimation: "定位动画"
+        case .usageStatistics: "使用统计"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .featurePanel:
-            "配置统一面板的唤起方式与转换参数。"
+        case .general:
+            "配置应用启动、工具面板与转换参数。"
         case .windowManagement:
             "配置窗口布局、跨屏操作与全局快捷键。"
         case .closedLidRunning:
-            "查看合盖运行服务状态与最近关闭记录。"
+            "控制合盖运行并查看后台组件与系统状态。"
         case .dsStoreManagement:
             "清理磁盘中的 .DS_Store，并按需持续监控。"
         case .mouseBindings:
             "为 Button 4、Button 5 分配点击和方向拖动动作。"
         case .cursorAnimation:
-            "选择鼠标定位时轮换播放的视觉效果。"
+            "一次查看并选择鼠标定位时轮换播放的视觉效果。"
+        case .usageStatistics:
+            "查看本机记录的成功操作次数。"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .featurePanel: "hammer"
+        case .general: "gearshape"
         case .windowManagement: "macwindow"
         case .closedLidRunning: "laptopcomputer"
         case .dsStoreManagement: "doc.badge.gearshape"
         case .mouseBindings: "computermouse"
         case .cursorAnimation: "cursorarrow.rays"
+        case .usageStatistics: "chart.bar"
         }
     }
 }
@@ -64,7 +69,7 @@ struct SettingsSceneRoot: View {
                 mouseBindingCoordinator: mouseBindingCoordinator,
                 closedLidRunningController: closedLidRunningController,
                 dsStoreManagementController: dsStoreManagementController,
-                previewCursorHighlight: context.previewCursorHighlight
+                usageStatistics: context.usageStatistics
             )
         } else {
             ProgressView("正在载入设置…")
@@ -79,26 +84,27 @@ struct SettingsView: View {
     @ObservedObject var mouseBindingCoordinator: MouseBindingCoordinator
     @ObservedObject var closedLidRunningController: ClosedLidRunningController
     @ObservedObject var dsStoreManagementController: DSStoreManagementController
-    let previewCursorHighlight: (CursorHighlightStyle) -> Void
-    @State private var selectedCategory: SettingsCategory? = .featurePanel
+    @ObservedObject var usageStatistics: UsageStatisticsStore
+    @State private var selectedCategory: SettingsCategory? = .general
 
     var body: some View {
         NavigationSplitView {
             List(SettingsCategory.allCases, selection: $selectedCategory) { category in
                 Label(category.title, systemImage: category.systemImage)
                     .tag(category)
+                    .help(category.subtitle)
             }
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 180, ideal: 205, max: 240)
         } detail: {
             SettingsCategoryDetail(
-                category: selectedCategory ?? .featurePanel,
+                category: selectedCategory ?? .general,
                 settings: settings,
                 shortcutCoordinator: shortcutCoordinator,
                 mouseBindingCoordinator: mouseBindingCoordinator,
                 closedLidRunningController: closedLidRunningController,
                 dsStoreManagementController: dsStoreManagementController,
-                previewCursorHighlight: previewCursorHighlight
+                usageStatistics: usageStatistics
             )
             .id(selectedCategory)
         }
@@ -114,18 +120,14 @@ private struct SettingsCategoryDetail: View {
     @ObservedObject var mouseBindingCoordinator: MouseBindingCoordinator
     @ObservedObject var closedLidRunningController: ClosedLidRunningController
     @ObservedObject var dsStoreManagementController: DSStoreManagementController
-    let previewCursorHighlight: (CursorHighlightStyle) -> Void
-    @State private var showsCompactTitle = false
+    @ObservedObject var usageStatistics: UsageStatisticsStore
+    @State private var confirmsStatisticsClear = false
 
     var body: some View {
         Form {
-            Section {
-                categoryHeader
-            }
-
             switch category {
-            case .featurePanel:
-                featurePanelSettings
+            case .general:
+                generalSettings
             case .windowManagement:
                 windowManagementSettings
             case .closedLidRunning:
@@ -138,45 +140,47 @@ private struct SettingsCategoryDetail: View {
                     coordinator: mouseBindingCoordinator
                 )
             case .cursorAnimation:
-                CursorAnimationSettingsView(
-                    settings: settings,
-                    preview: previewCursorHighlight
-                )
+                Section {
+                    CursorAnimationSettingsView(settings: settings)
+                } footer: {
+                    Text("可以全部关闭；启用多个时，每次定位会依次轮换。")
+                }
+            case .usageStatistics:
+                usageStatisticsSettings
             }
         }
         .formStyle(.grouped)
         .scrollEdgeEffectStyle(.soft, for: .top)
-        .navigationTitle(showsCompactTitle ? category.title : "")
-        .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentOffset.y + geometry.contentInsets.top > 72
-        } action: { _, isPastHeader in
-            showsCompactTitle = isPastHeader
+        .navigationTitle(category.title)
+        .alert("清除使用统计？", isPresented: $confirmsStatisticsClear) {
+            Button("取消", role: .cancel) {}
+            Button("清除", role: .destructive) {
+                usageStatistics.clear()
+            }
+        } message: {
+            Text("此操作只清除本机统计，无法撤销。")
         }
-    }
-
-    private var categoryHeader: some View {
-        VStack(spacing: 10) {
-            Image(systemName: category.systemImage)
-                .font(.system(size: 34, weight: .semibold))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.tint)
-                .frame(width: 68, height: 68)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-
-            Text(category.title)
-                .font(.system(size: 26, weight: .bold))
-
-            Text(category.subtitle)
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-        }
-        .multilineTextAlignment(.center)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
     }
 
     @ViewBuilder
-    private var featurePanelSettings: some View {
+    private var generalSettings: some View {
+        Section("应用") {
+            Toggle(
+                "登录时启动 miniTools",
+                isOn: Binding(
+                    get: { settings.launchAtLoginEnabled },
+                    set: { dsStoreManagementController.setLaunchAtLoginEnabled($0) }
+                )
+            )
+            if dsStoreManagementController.loginItemState == .requiresApproval {
+                LabeledContent("登录项") {
+                    Button("前往批准") {
+                        dsStoreManagementController.openLoginItemSettings()
+                    }
+                }
+            }
+        }
+
         Section("唤起") {
             panelShortcutRow
         }
@@ -204,18 +208,30 @@ private struct SettingsCategoryDetail: View {
     private var windowManagementSettings: some View {
         Section {
             Toggle(
-                "优先使用系统窗口操作",
+                "使用 macOS 原生窗口布局",
                 isOn: Binding(
                     get: { settings.usesSystemWindowActions },
                     set: { settings.updateUsesSystemWindowActions($0) }
                 )
             )
         } footer: {
-            Text("开启后优先调用当前应用的系统窗口布局与跨屏菜单；应用不支持时自动使用 miniTools 原有方式。")
+            Text("支持时使用 macOS 原生布局和跨屏操作，否则自动使用 miniTools。成功后会在屏幕右上角显示实际采用的方式。")
         }
 
-        Section("窗口布局") {
-            ForEach(WindowControlCatalog.windowLayoutDescriptors) { descriptor in
+        Section("四角") {
+            ForEach(windowDescriptors([.upperLeft, .upperRight, .lowerLeft, .lowerRight])) { descriptor in
+                windowControlRow(descriptor)
+            }
+        }
+
+        Section("边缘与尺寸") {
+            ForEach(windowDescriptors([.left, .right, .horizontalHalves, .verticalThirds])) { descriptor in
+                windowControlRow(descriptor)
+            }
+        }
+
+        Section("其他") {
+            ForEach(windowDescriptors([.maximize, .centerWindow])) { descriptor in
                 windowControlRow(descriptor)
             }
         }
@@ -227,29 +243,50 @@ private struct SettingsCategoryDetail: View {
         } header: {
             Text("跨屏操作")
         } footer: {
-            Text("快捷键修改后立即生效。窗口操作需要辅助功能权限。")
+            HStack {
+                Text("快捷键修改后立即生效。窗口操作需要辅助功能权限。")
+                Spacer()
+                Button("恢复默认快捷键") {
+                    shortcutCoordinator.restoreDefaultWindowControlShortcuts()
+                }
+            }
         }
     }
 
     @ViewBuilder
     private var closedLidRunningSettings: some View {
         Section {
+            Toggle(
+                "启用合盖运行",
+                isOn: Binding(
+                    get: { closedLidRunningController.isFeatureEnabled },
+                    set: { enabled in
+                        if enabled {
+                            closedLidRunningController.enable()
+                        } else {
+                            closedLidRunningController.disable()
+                        }
+                    }
+                )
+            )
+            .disabled(closedLidRunningController.isBusy)
+
             LabeledContent {
                 helperStatusControl
                     .frame(width: 190, alignment: .trailing)
             } label: {
                 settingsLabel(
-                    title: "服务状态",
+                    title: "后台组件",
                     subtitle: "用于控制 MacBook 合盖后的系统睡眠"
                 )
             }
             LabeledContent {
-                Text(closedLidRunningController.actualStateTitle)
+                Text(systemSleepStateTitle)
                     .foregroundStyle(.secondary)
             } label: {
                 settingsLabel(
-                    title: "SleepDisabled 实际值",
-                    subtitle: "状态栏锤子旁的小点也显示这个值"
+                    title: "当前系统状态",
+                    subtitle: "状态栏锤子旁的小点表示正在阻止睡眠"
                 )
             }
         } header: {
@@ -264,32 +301,6 @@ private struct SettingsCategoryDetail: View {
             }
         }
 
-        if !closedLidRunningController.recentClosedSessions.isEmpty {
-            Section {
-                ForEach(
-                    Array(closedLidRunningController.recentClosedSessions.enumerated()),
-                    id: \.offset
-                ) { _, session in
-                    LabeledContent {
-                        if let stoppedAt = session.stoppedAt {
-                            Text(stoppedAt.formatted(
-                                Date.FormatStyle(date: .abbreviated, time: .shortened)
-                            ))
-                            .foregroundStyle(.secondary)
-                        }
-                    } label: {
-                        settingsLabel(
-                            title: session.stopReason?.title ?? "未知原因",
-                            subtitle: "合盖运行会话"
-                        )
-                    }
-                }
-            } header: {
-                Text("最近关闭")
-            } footer: {
-                Text("最多保留最近 5 次关闭时间与原因。")
-            }
-        }
     }
 
     @ViewBuilder
@@ -335,18 +346,9 @@ private struct SettingsCategoryDetail: View {
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
-        } header: {
-            Text("功能")
-        } footer: {
-            Text("默认关闭。开启后使用 FSEvents 监听磁盘根目录。")
-        }
-
-        Section {
             HStack {
-                LabeledContent("清理范围") {
-                    Text("磁盘根目录（/）")
-                        .foregroundStyle(.secondary)
-                }
+                Text("清理磁盘中的 .DS_Store")
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Button("立即清理") {
                     dsStoreManagementController.cleanNow()
@@ -357,34 +359,9 @@ private struct SettingsCategoryDetail: View {
                 }
             }
         } header: {
-            Text("目录")
+            Text("功能")
         } footer: {
-            Text("清理会从 / 开始递归，并跳过废纸篓、系统目录、应用包、符号链接和无法读取的目录。")
-        }
-
-        Section {
-            Toggle(
-                "登录时启动 miniTools",
-                isOn: Binding(
-                    get: { settings.launchAtLoginEnabled },
-                    set: { dsStoreManagementController.setLaunchAtLoginEnabled($0) }
-                )
-            )
-            LabeledContent("登录项状态") {
-                HStack {
-                    Text(dsStoreManagementController.loginItemState.title)
-                        .foregroundStyle(.secondary)
-                    if dsStoreManagementController.loginItemState == .requiresApproval {
-                        Button("前往批准") {
-                            dsStoreManagementController.openLoginItemSettings()
-                        }
-                    }
-                }
-            }
-        } header: {
-            Text("持续运行")
-        } footer: {
-            Text("登录启动作用于整个 miniTools；启用 DS_Store 管理后，应用运行期间持续监控磁盘。")
+            Text("默认关闭。监控和立即清理都从 / 开始，并跳过废纸篓、系统目录、应用包、符号链接和无法读取的目录。")
         }
 
         if let error = dsStoreManagementController.lastError {
@@ -393,6 +370,83 @@ private struct SettingsCategoryDetail: View {
                     .foregroundStyle(.orange)
                     .textSelection(.enabled)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var usageStatisticsSettings: some View {
+        Section("概览") {
+            LabeledContent("最近 7 天") {
+                Text("\(usageStatistics.totalCount(recentDays: 7)) 次")
+                    .monospacedDigit()
+            }
+            LabeledContent("最近 30 天") {
+                Text("\(usageStatistics.totalCount(recentDays: 30)) 次")
+                    .monospacedDigit()
+            }
+            LabeledContent("累计") {
+                Text("\(usageStatistics.totalCount()) 次")
+                    .monospacedDigit()
+            }
+            LabeledContent("开始统计") {
+                Text(usageStatistics.startedAt.formatted(
+                    Date.FormatStyle(date: .abbreviated, time: .shortened)
+                ))
+                .foregroundStyle(.secondary)
+            }
+        }
+
+        ForEach(UsageStatisticsCategory.allCases) { category in
+            Section(category.title) {
+                let records = usageStatistics.records(in: category)
+                if records.isEmpty {
+                    Text("暂无使用记录")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(records) { record in
+                        LabeledContent {
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text("近 30 天 \(usageStatistics.count(for: record, recentDays: 30)) 次")
+                                    .monospacedDigit()
+                                Text("累计 \(record.totalCount) 次")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
+                        } label: {
+                            settingsLabel(
+                                title: record.title,
+                                subtitle: "最近使用：\(record.lastUsedAt.formatted(date: .abbreviated, time: .shortened))"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Section {
+            Button("清除使用统计…", role: .destructive) {
+                confirmsStatisticsClear = true
+            }
+            .disabled(usageStatistics.records.isEmpty)
+        } footer: {
+            Text("仅保存在这台 Mac 上。只统计成功完成的编码与转换、窗口管理和鼠标跨屏操作，不记录处理内容、窗口标题或文件信息。")
+        }
+    }
+
+    private var systemSleepStateTitle: String {
+        switch closedLidRunningController.actualSleepDisabled {
+        case true: "阻止睡眠（SleepDisabled = 1）"
+        case false: "允许睡眠（SleepDisabled = 0）"
+        case nil: "未知"
+        }
+    }
+
+    private func windowDescriptors(
+        _ ids: [WindowControlID]
+    ) -> [WindowControlDescriptor] {
+        ids.compactMap { id in
+            WindowControlCatalog.descriptors.first(where: { $0.id == id })
         }
     }
 

@@ -8,7 +8,7 @@ final class SettingsWindowController {
     private let mouseBindingCoordinator: MouseBindingCoordinator
     private let closedLidRunningController: ClosedLidRunningController
     private let dsStoreManagementController: DSStoreManagementController
-    private let previewCursorHighlight: (CursorHighlightStyle) -> Void
+    private let usageStatistics: UsageStatisticsStore
     private lazy var window = makeWindow()
 
     init(
@@ -17,14 +17,14 @@ final class SettingsWindowController {
         mouseBindingCoordinator: MouseBindingCoordinator,
         closedLidRunningController: ClosedLidRunningController,
         dsStoreManagementController: DSStoreManagementController,
-        previewCursorHighlight: @escaping (CursorHighlightStyle) -> Void
+        usageStatistics: UsageStatisticsStore
     ) {
         self.settings = settings
         self.shortcutCoordinator = shortcutCoordinator
         self.mouseBindingCoordinator = mouseBindingCoordinator
         self.closedLidRunningController = closedLidRunningController
         self.dsStoreManagementController = dsStoreManagementController
-        self.previewCursorHighlight = previewCursorHighlight
+        self.usageStatistics = usageStatistics
     }
 
     func show() {
@@ -39,7 +39,7 @@ final class SettingsWindowController {
             mouseBindingCoordinator: mouseBindingCoordinator,
             closedLidRunningController: closedLidRunningController,
             dsStoreManagementController: dsStoreManagementController,
-            previewCursorHighlight: previewCursorHighlight
+            usageStatistics: usageStatistics
         )
         let hostingController = NSHostingController(rootView: content)
         let window = NSWindow(contentViewController: hostingController)

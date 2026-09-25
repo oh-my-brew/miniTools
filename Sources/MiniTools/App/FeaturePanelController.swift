@@ -7,6 +7,7 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
 
     private let settings: AppSettings
     private let recentActionStore: RecentEncodingActionStore
+    private let usageStatistics: UsageStatisticsStore
     private let englishInputSourceSession = EnglishInputSourceSession()
 
     private var activePanel: FeaturePanelKind?
@@ -27,6 +28,13 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
         )
         viewModel.onActionCompleted = { [weak self] in
             self?.close(restoreFocus: true)
+        }
+        viewModel.onSuccessfulAction = { [weak self] id, title in
+            self?.usageStatistics.record(
+                id: id,
+                title: title,
+                category: .encodingConversion
+            )
         }
         viewModel.onCancel = { [weak self] in
             self?.close(restoreFocus: true)
@@ -52,11 +60,13 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
 
     init(
         settings: AppSettings,
+        usageStatistics: UsageStatisticsStore,
         recentActionStore: RecentEncodingActionStore = RecentEncodingActionStore(
             defaults: .standard
         )
     ) {
         self.settings = settings
+        self.usageStatistics = usageStatistics
         self.recentActionStore = recentActionStore
         super.init()
     }
