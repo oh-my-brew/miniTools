@@ -7,16 +7,16 @@ enum DSStorePathPolicy {
     ]
 
     private static let excludedSystemRoots: [String] = [
-        "/System", "/Library", "/Applications", "/private", "/usr", "/bin", "/sbin", "/var"
+        "/System", "/Library", "/Applications", "/private", "/usr", "/bin", "/sbin", "/var",
+        "/dev", "/Volumes", "/Network", "/net", "/home", "/cores", "/opt", "/nix"
     ]
 
-    static func normalizedSelectableDirectory(_ url: URL) -> URL? {
+    static func normalizedMonitoredDirectory(_ url: URL) -> URL? {
         guard (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else {
             return nil
         }
         let normalized = url.standardizedFileURL.resolvingSymlinksInPath()
-        guard normalized.path != "/",
-              !isSystemPath(normalized.path),
+        guard !isSystemPath(normalized.path),
               isReadableDirectory(normalized),
               !isExcludedDirectory(normalized) else {
             return nil
@@ -43,7 +43,8 @@ enum DSStorePathPolicy {
         guard isDSStore(normalizedFile) else { return false }
         for root in roots {
             let normalizedRoot = root.standardizedFileURL.resolvingSymlinksInPath()
-            guard normalizedFile.path.hasPrefix(normalizedRoot.path + "/") else { continue }
+            let rootPrefix = normalizedRoot.path == "/" ? "/" : normalizedRoot.path + "/"
+            guard normalizedFile.path.hasPrefix(rootPrefix) else { continue }
             var directory = normalizedFile.deletingLastPathComponent()
             while directory.path != normalizedRoot.path {
                 if shouldSkipDirectory(directory) { return false }

@@ -218,19 +218,13 @@ final class AppSettingsTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
 
         XCTAssertFalse(settings.dsStoreManagementEnabled)
-        XCTAssertTrue(settings.dsStoreMonitoredDirectoryPaths.isEmpty)
         XCTAssertFalse(settings.launchAtLoginEnabled)
 
         settings.updateDSStoreManagementEnabled(true)
-        settings.updateDSStoreMonitoredDirectoryPaths([
-            "/Users/example/Projects/../Projects",
-            "/Users/example/Projects"
-        ])
         settings.updateLaunchAtLoginEnabled(true)
 
         let restored = AppSettings(defaults: defaults)
         XCTAssertTrue(restored.dsStoreManagementEnabled)
-        XCTAssertEqual(restored.dsStoreMonitoredDirectoryPaths, ["/Users/example/Projects"])
         XCTAssertTrue(restored.launchAtLoginEnabled)
     }
 

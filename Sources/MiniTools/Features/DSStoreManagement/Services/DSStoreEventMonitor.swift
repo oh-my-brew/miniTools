@@ -21,7 +21,7 @@ final class DSStoreEventMonitor: @unchecked Sendable {
 
     private func startOnQueue(directories: [URL]) -> Bool {
         stopOnQueue()
-        let paths = directories.compactMap(DSStorePathPolicy.normalizedSelectableDirectory)
+        let paths = directories.compactMap(DSStorePathPolicy.normalizedMonitoredDirectory)
         guard !paths.isEmpty else { return false }
         roots = paths
 
@@ -89,9 +89,16 @@ final class DSStoreEventMonitor: @unchecked Sendable {
                 continue
             }
             let eventURL = URL(fileURLWithPath: path)
-            let candidate = DSStorePathPolicy.isDSStore(eventURL)
-                ? eventURL
-                : eventURL.appendingPathComponent(".DS_Store", isDirectory: false)
+            let candidate: URL
+            if DSStorePathPolicy.isDSStore(eventURL) {
+                candidate = eventURL
+            } else {
+                guard eventFlags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir) != 0 else {
+                    continue
+                }
+                candidate = eventURL.appendingPathComponent(".DS_Store", isDirectory: false)
+            }
+            guard FileManager.default.fileExists(atPath: candidate.path) else { continue }
             guard DSStorePathPolicy.canDelete(candidate, below: roots) else { continue }
             guard deduplicator.shouldProcess(path: candidate.path, now: now) else { continue }
             do {

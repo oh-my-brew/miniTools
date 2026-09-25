@@ -11,7 +11,7 @@ enum DSStoreCleaner {
         let errorStore = DSStoreCleanupErrorStore()
 
         for directory in directories {
-            guard let root = DSStorePathPolicy.normalizedSelectableDirectory(directory) else {
+            guard let root = DSStorePathPolicy.normalizedMonitoredDirectory(directory) else {
                 errorStore.set("无法访问目录：\(directory.path)")
                 continue
             }
@@ -21,7 +21,7 @@ enum DSStoreCleaner {
             guard let enumerator = FileManager.default.enumerator(
                 at: root,
                 includingPropertiesForKeys: keys,
-                options: [.skipsPackageDescendants],
+                options: [.skipsPackageDescendants, .skipsMounts],
                 errorHandler: { url, error in
                     errorStore.set("无法读取 \(url.path)：\(error.localizedDescription)")
                     return true

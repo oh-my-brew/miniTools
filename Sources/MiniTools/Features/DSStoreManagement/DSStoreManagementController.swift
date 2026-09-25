@@ -18,6 +18,7 @@ enum LoginItemState: Equatable {
 
 @MainActor
 final class DSStoreManagementController: ObservableObject {
+    private static let monitoredRoot = URL(fileURLWithPath: "/", isDirectory: true)
     @Published private(set) var deletedCount = 0
     @Published private(set) var lastError: String?
     @Published private(set) var isCleaning = false
@@ -59,37 +60,12 @@ final class DSStoreManagementController: ObservableObject {
         reconcileMonitoring()
     }
 
-    func addDirectories(_ urls: [URL]) {
-        let accepted = urls.compactMap(DSStorePathPolicy.normalizedSelectableDirectory)
-        guard !accepted.isEmpty else {
-            lastError = "请选择可读取的用户目录；不支持磁盘根目录、系统目录或应用包。"
-            return
-        }
-        settings.updateDSStoreMonitoredDirectoryPaths(
-            settings.dsStoreMonitoredDirectoryPaths + accepted.map(\.path)
-        )
-        lastError = nil
-        reconcileMonitoring()
-    }
-
-    func removeDirectory(path: String) {
-        settings.updateDSStoreMonitoredDirectoryPaths(
-            settings.dsStoreMonitoredDirectoryPaths.filter { $0 != path }
-        )
-        reconcileMonitoring()
-    }
-
     func cleanNow() {
         guard !isCleaning else { return }
-        let directories = selectedDirectories
-        guard !directories.isEmpty else {
-            lastError = "请先选择要清理的目录。"
-            return
-        }
         isCleaning = true
         cleanupTask = Task { [weak self] in
             let result = await Task.detached {
-                DSStoreCleaner.clean(directories: directories)
+                DSStoreCleaner.clean(directories: [Self.monitoredRoot])
             }.value
             guard let self, !Task.isCancelled else { return }
             deletedCount += result.deletedCount
@@ -145,19 +121,10 @@ final class DSStoreManagementController: ObservableObject {
         monitor.stop()
         isMonitoring = false
         guard settings.dsStoreManagementEnabled else { return }
-        let directories = selectedDirectories
-        guard !directories.isEmpty else {
-            lastError = "请先选择要监控的目录。"
-            return
-        }
-        isMonitoring = monitor.start(directories: directories)
+        isMonitoring = monitor.start(directories: [Self.monitoredRoot])
         if !isMonitoring {
-            lastError = "无法启动所选目录的文件监控。"
+            lastError = "无法启动磁盘根目录的文件监控。"
         }
-    }
-
-    private var selectedDirectories: [URL] {
-        settings.dsStoreMonitoredDirectoryPaths.map(URL.init(fileURLWithPath:))
     }
 
     private var managesLoginItem: Bool {

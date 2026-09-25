@@ -70,9 +70,9 @@
 
 ### DS_Store 管理与登录启动
 
-- DS_Store 管理是设置中的可选功能，默认关闭；只允许监控用户明确选择的目录，不得默认监听或遍历 `/`。
+- DS_Store 管理是设置中的可选功能，默认关闭；开启后固定监听 `/`，立即清理也从 `/` 开始。
 - FSEvents 事件需要按目标路径去重；删除成功后才累计本次删除数量，错误提示需要限频并保留最近一次错误。
-- 递归清理和实时监控共用路径策略，必须排除 `.Trash`、`.Trashes`、系统目录、应用包和无权限目录，不得跟随符号链接越过所选目录。
+- 递归清理和实时监控共用路径策略，必须排除 `.Trash`、`.Trashes`、系统目录、挂载卷、应用包和无权限目录，不得跟随符号链接进入其他路径。
 - “登录时启动 miniTools”使用 `SMAppService.mainApp`，属于整个主应用的设置；非“应用程序”目录中的开发构建不得注册或查询正式登录项。
 - 该功能在主应用内运行，不新增特权 helper，也不得停止、卸载或接管其他 DS_Store 服务。
 
@@ -87,7 +87,7 @@
 | `Features/WindowManagement` | 窗口几何、布局命令、AX 健康检查、跨屏鼠标移动和定位动画。 |
 | `Features/MouseBindings` | 侧键事件监听、手势识别、动作配置和拖动路径反馈。 |
 | `Features/ClosedLidRunning` | 合盖运行会话、电量暂停与恢复、后台服务状态和 XPC 客户端。 |
-| `Features/DSStoreManagement` | 用户目录选择、FSEvents 监控、DS_Store 清理策略、计数和登录启动状态。 |
+| `Features/DSStoreManagement` | 根目录 FSEvents 监控、DS_Store 清理策略、计数和登录启动状态。 |
 | `Sources/MiniToolsPowerSupport` | 主应用与 root helper 共用的最小 XPC 协议、签名要求和 `pmset` 解析。 |
 | `Sources/MiniToolsPowerHelper` | 受 `SMAppService` 管理的 root LaunchDaemon，只负责设置和查询合盖运行开关。 |
 | `Shared` | Accessibility、统一 `AppCommand`、全局快捷键、设置持久化和通用 UI。跨功能抽象应有两个以上实际调用方再放入这里。 |
@@ -115,7 +115,7 @@
 | 活动窗口移动、缩放和跨屏 | 辅助功能（Accessibility）。 |
 | Button 4/5 监听与拦截 | 辅助功能 + 输入监控（Input Monitoring）。 |
 | 合盖运行 | 首次使用需管理员批准后台 LaunchDaemon；不依赖辅助功能或输入监控。 |
-| DS_Store 管理 | 不需要辅助功能权限；只受所选目录的普通文件权限约束。登录启动由系统登录项管理。 |
+| DS_Store 管理 | 不需要辅助功能权限；受普通文件权限约束，无法读取的目录会跳过。登录启动由系统登录项管理。 |
 
 权限异常先检查应用路径、Bundle ID、代码签名的 Designated Requirement 和目标应用 AX 状态，不要直接建议用户反复重置整个 TCC 数据库。
 

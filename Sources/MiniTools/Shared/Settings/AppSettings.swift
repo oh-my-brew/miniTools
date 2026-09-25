@@ -12,7 +12,6 @@ final class AppSettings: ObservableObject {
         static let mouseDragThresholdRatio = "mouseDragThresholdRatio"
         static let closedLidRunningEnabled = "closedLidRunningEnabled"
         static let dsStoreManagementEnabled = "dsStoreManagementEnabled"
-        static let dsStoreMonitoredDirectoryPaths = "dsStoreMonitoredDirectoryPaths"
         static let launchAtLoginEnabled = "launchAtLoginEnabled"
         static let legacyMouseDragThreshold = "mouseDragThreshold"
         static let restoredHikariCursorStyle = "restoredHikariCursorStyleV1"
@@ -32,7 +31,6 @@ final class AppSettings: ObservableObject {
     @Published private(set) var mouseDragThresholdRatio: Double
     @Published private(set) var closedLidRunningEnabled: Bool
     @Published private(set) var dsStoreManagementEnabled: Bool
-    @Published private(set) var dsStoreMonitoredDirectoryPaths: [String]
     @Published private(set) var launchAtLoginEnabled: Bool
     @Published var compressionQuality: Double {
         didSet {
@@ -62,7 +60,6 @@ final class AppSettings: ObservableObject {
         mouseDragThresholdRatio = Self.loadMouseDragThresholdRatio(defaults: defaults)
         closedLidRunningEnabled = defaults.bool(forKey: Keys.closedLidRunningEnabled)
         dsStoreManagementEnabled = defaults.bool(forKey: Keys.dsStoreManagementEnabled)
-        dsStoreMonitoredDirectoryPaths = Self.loadDirectoryPaths(defaults: defaults)
         launchAtLoginEnabled = defaults.bool(forKey: Keys.launchAtLoginEnabled)
 
         let storedQuality = defaults.double(forKey: Keys.compressionQuality)
@@ -135,15 +132,6 @@ final class AppSettings: ObservableObject {
         guard enabled != dsStoreManagementEnabled else { return }
         dsStoreManagementEnabled = enabled
         defaults.set(enabled, forKey: Keys.dsStoreManagementEnabled)
-    }
-
-    func updateDSStoreMonitoredDirectoryPaths(_ paths: [String]) {
-        let normalized = Array(Set(paths.map {
-            URL(fileURLWithPath: $0).standardizedFileURL.path
-        })).sorted()
-        guard normalized != dsStoreMonitoredDirectoryPaths else { return }
-        dsStoreMonitoredDirectoryPaths = normalized
-        defaults.set(normalized, forKey: Keys.dsStoreMonitoredDirectoryPaths)
     }
 
     func updateLaunchAtLoginEnabled(_ enabled: Bool) {
@@ -317,10 +305,4 @@ final class AppSettings: ObservableObject {
         return try? JSONDecoder().decode(KeyboardShortcut.self, from: data)
     }
 
-    private static func loadDirectoryPaths(defaults: UserDefaults) -> [String] {
-        let stored = defaults.stringArray(forKey: Keys.dsStoreMonitoredDirectoryPaths) ?? []
-        return Array(Set(stored.map {
-            URL(fileURLWithPath: $0).standardizedFileURL.path
-        })).sorted()
-    }
 }
