@@ -3,6 +3,36 @@ import XCTest
 @testable import MiniTools
 
 final class WindowManagementTests: XCTestCase {
+    func testWindowTargetPrefersAccessibilityFocusBeforeFrontmostApplication() {
+        XCTAssertEqual(
+            WindowTargetResolver.candidateProcessIdentifiers(
+                accessibilityFocusedProcessIdentifier: 42,
+                frontmostProcessIdentifier: 84,
+                currentProcessIdentifier: 21
+            ),
+            [42, 84]
+        )
+    }
+
+    func testWindowTargetDeduplicatesAndExcludesMiniTools() {
+        XCTAssertEqual(
+            WindowTargetResolver.candidateProcessIdentifiers(
+                accessibilityFocusedProcessIdentifier: 42,
+                frontmostProcessIdentifier: 42,
+                currentProcessIdentifier: 21
+            ),
+            [42]
+        )
+        XCTAssertEqual(
+            WindowTargetResolver.candidateProcessIdentifiers(
+                accessibilityFocusedProcessIdentifier: 21,
+                frontmostProcessIdentifier: 84,
+                currentProcessIdentifier: 21
+            ),
+            [84]
+        )
+    }
+
     func testDetectsVisibleApplicationWithNoAXWindowRoleAsInvalid() {
         XCTAssertTrue(
             WindowAccessibilityHealth.isInvalid(
@@ -456,6 +486,42 @@ final class WindowManagementTests: XCTestCase {
         )
     }
 
+    func testWindowServerInspectorUsesElevatedPanelWhenNoNormalWindowExists() {
+        let processIdentifier: pid_t = 42
+        let quickTerminalFrame = CGRect(x: 0, y: 0, width: 1440, height: 500)
+
+        XCTAssertEqual(
+            WindowServerWindowInspector.frontmostVisibleWindowFrame(
+                processIdentifier: processIdentifier,
+                windows: [
+                    windowServerRecord(
+                        pid: processIdentifier,
+                        frame: quickTerminalFrame,
+                        layer: 3
+                    )
+                ]
+            ),
+            quickTerminalFrame
+        )
+    }
+
+    func testWindowServerInspectorPrefersNormalWindowOverElevatedPanel() {
+        let processIdentifier: pid_t = 42
+        let panelFrame = CGRect(x: 0, y: 0, width: 1440, height: 500)
+        let normalFrame = CGRect(x: 100, y: 100, width: 900, height: 700)
+
+        XCTAssertEqual(
+            WindowServerWindowInspector.frontmostVisibleWindowFrame(
+                processIdentifier: processIdentifier,
+                windows: [
+                    windowServerRecord(pid: processIdentifier, frame: panelFrame, layer: 3),
+                    windowServerRecord(pid: processIdentifier, frame: normalFrame)
+                ]
+            ),
+            normalFrame
+        )
+    }
+
     @MainActor
     func testConvertsAppKitCoordinatesToAccessibilityCoordinates() {
         let appKitRect = CGRect(x: -1000, y: 1080, width: 1000, height: 800)
@@ -539,10 +605,14 @@ final class WindowManagementTests: XCTestCase {
         )
     }
 
-    private func windowServerRecord(pid: pid_t, frame: CGRect) -> [String: Any] {
+    private func windowServerRecord(
+        pid: pid_t,
+        frame: CGRect,
+        layer: Int = 0
+    ) -> [String: Any] {
         [
             kCGWindowOwnerPID as String: NSNumber(value: pid),
-            kCGWindowLayer as String: NSNumber(value: 0),
+            kCGWindowLayer as String: NSNumber(value: layer),
             kCGWindowAlpha as String: NSNumber(value: 1),
             kCGWindowBounds as String: frame.dictionaryRepresentation
         ]

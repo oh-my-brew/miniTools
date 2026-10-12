@@ -59,7 +59,7 @@ enum WindowLayoutService {
         usesSystemWindowActions: Bool = false
     ) async throws -> WindowActionOutcome {
         try AccessibilityAuthorization.requirePermission()
-        let application = try await frontmostApplication()
+        let application = try await activeApplication()
         let geometries = await WindowGeometry.screenGeometries()
 
         return try await Task.detached(priority: .userInitiated) {
@@ -111,7 +111,7 @@ enum WindowLayoutService {
         usesSystemWindowActions: Bool = false
     ) async throws -> WindowActionOutcome {
         try AccessibilityAuthorization.requirePermission()
-        let application = try await frontmostApplication()
+        let application = try await activeApplication()
         let geometries = await WindowGeometry.screenGeometries()
 
         return try await Task.detached(priority: .userInitiated) {
@@ -153,7 +153,7 @@ enum WindowLayoutService {
         usesSystemWindowActions: Bool = false
     ) async throws -> WindowActionOutcome {
         try AccessibilityAuthorization.requirePermission()
-        let application = try await frontmostApplication()
+        let application = try await activeApplication()
         let geometries = await WindowGeometry.screenGeometries()
 
         return try await Task.detached(priority: .userInitiated) {
@@ -181,17 +181,46 @@ enum WindowLayoutService {
     }
 
     @MainActor
-    private static func frontmostApplication() throws -> TargetApplication {
-        guard
-            let application = NSWorkspace.shared.frontmostApplication,
-            application.processIdentifier != ProcessInfo.processInfo.processIdentifier
-        else {
-            throw WindowLayoutError.noActiveApplication
-        }
-        return TargetApplication(
-            processIdentifier: application.processIdentifier,
-            name: application.localizedName ?? "当前应用"
+    private static func activeApplication() throws -> TargetApplication {
+        let frontmostProcessIdentifier = NSWorkspace.shared.frontmostApplication?
+            .processIdentifier
+        let focusedProcessIdentifier = AccessibilityClient.systemFocusedProcessIdentifier()
+        let processIdentifiers = WindowTargetResolver.candidateProcessIdentifiers(
+            accessibilityFocusedProcessIdentifier: focusedProcessIdentifier,
+            frontmostProcessIdentifier: frontmostProcessIdentifier,
+            currentProcessIdentifier: ProcessInfo.processInfo.processIdentifier
         )
+
+        for processIdentifier in processIdentifiers {
+            guard let application = NSRunningApplication(
+                processIdentifier: processIdentifier
+            ) else {
+                continue
+            }
+            let target = TargetApplication(
+                processIdentifier: processIdentifier,
+                name: application.localizedName ?? "当前应用"
+            )
+
+            // A non-activating panel can own the system keyboard focus while a
+            // different application remains frontmost. Prefer it only when its
+            // AX tree exposes a real window; otherwise preserve the established
+            // frontmost-application behavior.
+            if processIdentifier == focusedProcessIdentifier,
+               processIdentifier != frontmostProcessIdentifier,
+               !hasAccessibleWindow(for: target) {
+                continue
+            }
+            return target
+        }
+        throw WindowLayoutError.noActiveApplication
+    }
+
+    private static func hasAccessibleWindow(for target: TargetApplication) -> Bool {
+        let application = AccessibilityClient.application(for: target.processIdentifier)
+        return windowCandidates(from: application).contains {
+            $0.role == kAXWindowRole as String
+        }
     }
 
     private static func focusedWindow(for target: TargetApplication) throws -> AXUIElement {
