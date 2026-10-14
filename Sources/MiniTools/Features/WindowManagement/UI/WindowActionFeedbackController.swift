@@ -6,20 +6,10 @@ final class WindowActionFeedbackController {
     private var dismissWorkItem: DispatchWorkItem?
 
     func showError(_ message: String) {
-        show(message, position: .topCenter, duration: 1.35)
+        show(message, duration: 1.35)
     }
 
-    /// 仅在确实调用了 macOS 原生窗口能力时提示。
-    func showNativeAction(title: String) {
-        show("macOS 原生 · \(title)", position: .topRight, duration: 1.15)
-    }
-
-    private enum Position {
-        case topCenter
-        case topRight
-    }
-
-    private func show(_ message: String, position: Position, duration: TimeInterval) {
+    private func show(_ message: String, duration: TimeInterval) {
         dismissWorkItem?.cancel()
         panel?.orderOut(nil)
 
@@ -44,17 +34,9 @@ final class WindowActionFeedbackController {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame ?? NSScreen.screens.first?.visibleFrame ?? .zero
-        let originX = switch position {
-        case .topCenter: visibleFrame.midX - size.width / 2
-        case .topRight: visibleFrame.maxX - size.width - 22
-        }
-        let topInset: CGFloat = switch position {
-        case .topCenter: 90
-        case .topRight: 22
-        }
         let frame = CGRect(
-            x: originX,
-            y: visibleFrame.maxY - size.height - topInset,
+            x: visibleFrame.midX - size.width / 2,
+            y: visibleFrame.maxY - size.height - 90,
             width: size.width,
             height: size.height
         )

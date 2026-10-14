@@ -206,18 +206,6 @@ private struct SettingsCategoryDetail: View {
 
     @ViewBuilder
     private var windowManagementSettings: some View {
-        Section {
-            Toggle(
-                "使用 macOS 原生窗口布局",
-                isOn: Binding(
-                    get: { settings.usesSystemWindowActions },
-                    set: { settings.updateUsesSystemWindowActions($0) }
-                )
-            )
-        } footer: {
-            Text("支持时使用 macOS 原生布局和跨屏操作，否则自动使用 miniTools。成功后会在屏幕右上角显示实际采用的方式。")
-        }
-
         Section("四角") {
             ForEach(windowDescriptors([.upperLeft, .upperRight, .lowerLeft, .lowerRight])) { descriptor in
                 windowControlRow(descriptor)

@@ -2,13 +2,11 @@ import AppKit
 
 @MainActor
 final class WindowControlController {
-    private let settings: AppSettings
     private let usageStatistics: UsageStatisticsStore
     private let cursorHighlightController = CursorHighlightController()
     private let feedbackController = WindowActionFeedbackController()
 
-    init(settings: AppSettings, usageStatistics: UsageStatisticsStore) {
-        self.settings = settings
+    init(usageStatistics: UsageStatisticsStore) {
         self.usageStatistics = usageStatistics
     }
 
@@ -16,13 +14,9 @@ final class WindowControlController {
         _ id: WindowControlID,
         cursorHighlightStyles: Set<CursorHighlightStyle>
     ) {
-        let usesSystemWindowActions = settings.usesSystemWindowActions
         if let command = WindowControlCatalog.layoutCommand(for: id) {
             performWindowAction(id: id) {
-                try await WindowLayoutService.applyLayout(
-                    command,
-                    usesSystemWindowActions: usesSystemWindowActions
-                )
+                try await WindowLayoutService.applyLayout(command)
             }
             return
         }
@@ -30,17 +24,13 @@ final class WindowControlController {
         switch id {
         case .moveWindowToNextScreen:
             performWindowAction(id: id) {
-                try await WindowLayoutService.moveFocusedWindowToNextScreen(
-                    usesSystemWindowActions: usesSystemWindowActions
-                )
+                try await WindowLayoutService.moveFocusedWindowToNextScreen()
             }
         case .movePointerToNextScreen:
             movePointerToNextScreen(cursorHighlightStyles: cursorHighlightStyles)
         case .centerWindow:
             performWindowAction(id: id) {
-                try await WindowLayoutService.centerFocusedWindow(
-                    usesSystemWindowActions: usesSystemWindowActions
-                )
+                try await WindowLayoutService.centerFocusedWindow()
             }
         default:
             break
@@ -88,10 +78,6 @@ final class WindowControlController {
                     title: title,
                     category: .windowManagement
                 )
-                // 只有真正调用到 macOS 原生能力时才提示来源。
-                if outcome.implementation == .macOSNative {
-                    feedbackController.showNativeAction(title: title)
-                }
             } catch {
                 self?.report(error)
             }
