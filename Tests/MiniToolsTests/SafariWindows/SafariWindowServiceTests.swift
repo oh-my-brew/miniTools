@@ -45,7 +45,7 @@ final class SafariWindowServiceTests: XCTestCase {
         let available = CGSize(width: 1200, height: 800)
         let layout = SafariPanelLayout.calculate(windowCount: 50, availableSize: available)
 
-        XCTAssertEqual(layout.contentSize.width, 560)
+        XCTAssertEqual(layout.contentSize.width, FeaturePanelMetrics.preferredWidth)
         XCTAssertLessThanOrEqual(layout.contentSize.width, available.width)
         XCTAssertLessThanOrEqual(layout.contentSize.height, available.height)
         XCTAssertGreaterThan(layout.rowHeight, 0)

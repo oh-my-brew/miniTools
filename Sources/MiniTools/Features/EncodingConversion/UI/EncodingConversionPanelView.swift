@@ -16,49 +16,30 @@ struct EncodingConversionPanelView: View {
     }
 
     private var header: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                contentThumbnail
+        HStack(spacing: 12) {
+            contentThumbnail
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(viewModel.contentSummary)
-                        .font(.system(size: 13, weight: .semibold))
-                    if !viewModel.contentPreview.isEmpty {
-                        Text(viewModel.contentPreview)
-                            .font(.system(size: 11.5, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Spacer()
-
-                if viewModel.isAnalyzing {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Text("正在识别…")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(viewModel.contentSummary)
+                    .font(.system(size: 13, weight: .semibold))
+                if !viewModel.contentPreview.isEmpty {
+                    Text(viewModel.contentPreview)
+                        .font(.system(size: 11.5, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer()
 
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-                ASCIIQueryTextField(
-                    text: viewModel.searchQuery,
-                    placeholder: "输入英文功能名，例如 base64、json、qr…",
-                    focusRequestID: viewModel.focusRequestID,
-                    onChange: { viewModel.updateSearchQuery($0) }
-                )
-                .frame(maxWidth: .infinity, minHeight: 22, maxHeight: 22)
+            if viewModel.isAnalyzing {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("正在识别…")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
             }
-            .padding(.horizontal, 11)
-            .frame(height: 34)
-            .background(Color.primary.opacity(0.065))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 12)

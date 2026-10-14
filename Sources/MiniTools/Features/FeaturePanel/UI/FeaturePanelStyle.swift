@@ -2,11 +2,11 @@ import AppKit
 import SwiftUI
 
 enum FeaturePanelMetrics {
-    static let preferredWidth: CGFloat = 560
+    static let preferredWidth: CGFloat = 680
     static let minimumWidth: CGFloat = 320
     static let encodingPanelHeight: CGFloat = 568
 
-    static let switcherHeight: CGFloat = 40
+    static let switcherHeight: CGFloat = 52
     static let switcherContentSpacing: CGFloat = 10
     static let surfaceCornerRadius: CGFloat = 18
 

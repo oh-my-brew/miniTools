@@ -18,7 +18,7 @@ struct ASCIIQueryTextField: NSViewRepresentable {
         textField.isBordered = false
         textField.drawsBackground = false
         textField.focusRingType = .none
-        textField.font = .systemFont(ofSize: 13)
+        textField.font = .systemFont(ofSize: 16)
         textField.placeholderString = placeholder
         textField.lineBreakMode = .byTruncatingTail
         textField.cell?.usesSingleLineMode = true

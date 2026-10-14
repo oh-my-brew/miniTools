@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import SwiftUI
 
 @MainActor
@@ -136,6 +137,8 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
                 encodingViewModel.beginSession(
                     compressionQuality: settings.compressionQuality
                 )
+            } else {
+                encodingViewModel.requestSearchFocus()
             }
             setPanelSize(encodingPanelSize(), for: panel)
             if shouldPresent {
@@ -241,7 +244,36 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
     }
 
     private func showPanel() {
+        guard !panel.isVisible else {
+            panel.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        panel.alphaValue = reduceMotion ? 1 : 0
+
+        let contentLayer = panel.contentView?.layer
+        contentLayer?.removeAnimation(forKey: "feature-panel-reveal")
+        contentLayer?.transform = CATransform3DIdentity
+
         panel.makeKeyAndOrderFront(nil)
+
+        guard !reduceMotion else { return }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.16
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 1
+        }
+
+        if let contentLayer {
+            let reveal = CABasicAnimation(keyPath: "transform.scale")
+            reveal.fromValue = 0.96
+            reveal.toValue = 1
+            reveal.duration = 0.16
+            reveal.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            contentLayer.add(reveal, forKey: "feature-panel-reveal")
+        }
     }
 
     private func makePanel() -> FloatingPanel {
