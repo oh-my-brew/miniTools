@@ -271,7 +271,7 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
 
         if let contentLayer {
             let reveal = CABasicAnimation(keyPath: "transform.scale")
-            reveal.fromValue = 1.04
+            reveal.fromValue = 0.96
             reveal.toValue = 1
             reveal.duration = 0.16
             reveal.timingFunction = CAMediaTimingFunction(name: .easeOut)
