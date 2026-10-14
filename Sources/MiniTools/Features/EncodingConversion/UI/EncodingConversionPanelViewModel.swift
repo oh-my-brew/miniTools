@@ -130,9 +130,13 @@ final class EncodingConversionPanelViewModel: ObservableObject {
 
     func beginSession(compressionQuality: Double) {
         sessionGeneration += 1
-        focusRequestID += 1
+        requestSearchFocus()
         self.compressionQuality = compressionQuality
         loadClipboard()
+    }
+
+    func requestSearchFocus() {
+        focusRequestID += 1
     }
 
     func endSession() {

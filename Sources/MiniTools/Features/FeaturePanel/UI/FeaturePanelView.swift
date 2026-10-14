@@ -42,27 +42,56 @@ struct FeaturePanelView: View {
         )
     }
 
+    @ViewBuilder
     private var activePanelTitle: some View {
-        activePanelTitleContent(for: selectionModel.selection)
-            .padding(.horizontal, 14)
-            .frame(
-                maxWidth: .infinity,
-                minHeight: FeaturePanelMetrics.switcherHeight,
-                maxHeight: FeaturePanelMetrics.switcherHeight,
-                alignment: .leading
+        if selectionModel.selection == .encodingConversion {
+            encodingSearch
+                .padding(.horizontal, 18)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: FeaturePanelMetrics.switcherHeight,
+                    maxHeight: FeaturePanelMetrics.switcherHeight,
+                    alignment: .leading
+                )
+                .featurePanelGlassControl(in: Capsule())
+        } else {
+            activePanelTitleContent(for: selectionModel.selection)
+                .padding(.horizontal, 18)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: FeaturePanelMetrics.switcherHeight,
+                    maxHeight: FeaturePanelMetrics.switcherHeight,
+                    alignment: .leading
+                )
+                .featurePanelGlassControl(in: Capsule())
+                .accessibilityElement(children: .combine)
+        }
+    }
+
+    private var encodingSearch: some View {
+        HStack(spacing: 11) {
+            panelIcon(for: .encodingConversion)
+                .frame(width: 20, height: 20)
+                .foregroundStyle(Color.accentColor)
+
+            ASCIIQueryTextField(
+                text: encodingViewModel.searchQuery,
+                placeholder: "编码与转换",
+                focusRequestID: encodingViewModel.focusRequestID,
+                onChange: encodingViewModel.updateSearchQuery
             )
-            .featurePanelGlassControl(in: Capsule())
-            .accessibilityElement(children: .combine)
+            .frame(maxWidth: .infinity, minHeight: 24)
+        }
     }
 
     private func activePanelTitleContent(for kind: FeaturePanelKind) -> some View {
-        HStack(spacing: 9) {
+        HStack(spacing: 11) {
             panelIcon(for: kind)
-                .frame(width: 17, height: 17)
+                .frame(width: 20, height: 20)
                 .foregroundStyle(Color.accentColor)
 
             Text(kind.title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
         }
@@ -86,9 +115,12 @@ struct FeaturePanelView: View {
             onSelectPanel(kind)
         } label: {
             panelIcon(for: kind)
-                .frame(width: 16, height: 16)
+                .frame(width: 18, height: 18)
                 .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-                .frame(width: 40, height: 40)
+                .frame(
+                    width: FeaturePanelMetrics.switcherHeight,
+                    height: FeaturePanelMetrics.switcherHeight
+                )
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
