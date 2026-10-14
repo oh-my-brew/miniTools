@@ -255,6 +255,9 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
         let contentLayer = panel.contentView?.layer
         contentLayer?.removeAnimation(forKey: "feature-panel-reveal")
         contentLayer?.transform = CATransform3DIdentity
+        if let contentLayer {
+            centerRevealAnimationAnchor(contentLayer)
+        }
 
         panel.makeKeyAndOrderFront(nil)
 
@@ -268,12 +271,24 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
 
         if let contentLayer {
             let reveal = CABasicAnimation(keyPath: "transform.scale")
-            reveal.fromValue = 0.96
+            reveal.fromValue = 1.04
             reveal.toValue = 1
             reveal.duration = 0.16
             reveal.timingFunction = CAMediaTimingFunction(name: .easeOut)
             contentLayer.add(reveal, forKey: "feature-panel-reveal")
         }
+    }
+
+    private func centerRevealAnimationAnchor(_ layer: CALayer) {
+        let centeredAnchor = CGPoint(x: 0.5, y: 0.5)
+        guard layer.anchorPoint != centeredAnchor else { return }
+
+        let oldAnchor = layer.anchorPoint
+        layer.position = CGPoint(
+            x: layer.position.x + layer.bounds.width * (centeredAnchor.x - oldAnchor.x),
+            y: layer.position.y + layer.bounds.height * (centeredAnchor.y - oldAnchor.y)
+        )
+        layer.anchorPoint = centeredAnchor
     }
 
     private func makePanel() -> FloatingPanel {
