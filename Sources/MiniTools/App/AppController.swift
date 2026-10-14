@@ -6,7 +6,6 @@ final class AppController: NSObject {
     private var settings: AppSettings { applicationContext.settings }
     private let statusMenuController = StatusMenuController()
     private lazy var windowControlController = WindowControlController(
-        settings: settings,
         usageStatistics: applicationContext.usageStatistics
     )
     private lazy var closedLidRunningController = ClosedLidRunningController(

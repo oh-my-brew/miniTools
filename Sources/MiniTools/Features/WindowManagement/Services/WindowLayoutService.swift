@@ -2,14 +2,8 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-enum WindowActionImplementation: Equatable, Sendable {
-    case macOSNative
-    case miniTools
-}
-
-/// 一次窗口操作的实际结果：使用了哪套实现，以及命中的循环候选。
+/// 一次窗口操作命中的循环候选。
 struct WindowActionOutcome: Equatable, Sendable {
-    let implementation: WindowActionImplementation
     let candidateIndex: Int
 }
 
@@ -54,10 +48,7 @@ enum WindowLayoutService {
         let name: String
     }
 
-    static func applyLayout(
-        _ command: WindowLayoutCommand,
-        usesSystemWindowActions: Bool = false
-    ) async throws -> WindowActionOutcome {
+    static func applyLayout(_ command: WindowLayoutCommand) async throws -> WindowActionOutcome {
         try AccessibilityAuthorization.requirePermission()
         let application = try await activeApplication()
         let geometries = await WindowGeometry.screenGeometries()
@@ -80,36 +71,16 @@ enum WindowLayoutService {
             ) else {
                 throw WindowLayoutError.unreadableWindowFrame
             }
-            if usesSystemWindowActions,
-               let candidateIndex = targets.firstIndex(of: target),
-               let systemAction = SystemWindowActionResolver.layoutAction(
-                   for: command.id,
-                   candidateIndex: candidateIndex
-               ),
-               SystemWindowMenuService.performLayoutAction(
-                   systemAction,
-                   processIdentifier: application.processIdentifier
-               ) {
-                return WindowActionOutcome(
-                    implementation: .macOSNative,
-                    candidateIndex: candidateIndex
-                )
-            }
             try setFrame(
                 target,
                 of: window,
                 processIdentifier: application.processIdentifier
             )
-            return WindowActionOutcome(
-                implementation: .miniTools,
-                candidateIndex: targets.firstIndex(of: target) ?? 0
-            )
+            return WindowActionOutcome(candidateIndex: targets.firstIndex(of: target) ?? 0)
         }.value
     }
 
-    static func moveFocusedWindowToNextScreen(
-        usesSystemWindowActions: Bool = false
-    ) async throws -> WindowActionOutcome {
+    static func moveFocusedWindowToNextScreen() async throws -> WindowActionOutcome {
         try AccessibilityAuthorization.requirePermission()
         let application = try await activeApplication()
         let geometries = await WindowGeometry.screenGeometries()
@@ -126,15 +97,6 @@ enum WindowLayoutService {
             )
             let nextIndex = (currentIndex + 1) % geometries.count
             let destination = geometries[nextIndex]
-            if usesSystemWindowActions,
-               !destination.localizedName.isEmpty,
-               SystemWindowMenuService.performMoveAction(
-                   to: destination.localizedName,
-                   destinationIsBuiltIn: destination.isBuiltIn,
-                   processIdentifier: application.processIdentifier
-               ) {
-                return WindowActionOutcome(implementation: .macOSNative, candidateIndex: 0)
-            }
             let target = WindowGeometry.frameByMoving(
                 currentFrame,
                 from: geometries[currentIndex].visibleFrame,
@@ -145,13 +107,11 @@ enum WindowLayoutService {
                 of: window,
                 processIdentifier: application.processIdentifier
             )
-            return WindowActionOutcome(implementation: .miniTools, candidateIndex: 0)
+            return WindowActionOutcome(candidateIndex: 0)
         }.value
     }
 
-    static func centerFocusedWindow(
-        usesSystemWindowActions: Bool = false
-    ) async throws -> WindowActionOutcome {
+    static func centerFocusedWindow() async throws -> WindowActionOutcome {
         try AccessibilityAuthorization.requirePermission()
         let application = try await activeApplication()
         let geometries = await WindowGeometry.screenGeometries()
@@ -161,12 +121,6 @@ enum WindowLayoutService {
             try ensureWindowCanBeAdjusted(window)
 
             let currentFrame = try frame(of: window, for: application)
-            if usesSystemWindowActions,
-               SystemWindowMenuService.performCenterAction(
-                   processIdentifier: application.processIdentifier
-               ) {
-                return WindowActionOutcome(implementation: .macOSNative, candidateIndex: 0)
-            }
             let visibleFrame = WindowGeometry.screenGeometry(
                 for: currentFrame,
                 geometries: geometries
@@ -176,7 +130,7 @@ enum WindowLayoutService {
                 of: window,
                 processIdentifier: application.processIdentifier
             )
-            return WindowActionOutcome(implementation: .miniTools, candidateIndex: 0)
+            return WindowActionOutcome(candidateIndex: 0)
         }.value
     }
 
