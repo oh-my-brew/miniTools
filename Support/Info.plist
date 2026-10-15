@@ -28,9 +28,9 @@
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
-	<key>SUAutomaticallyUpdate</key>
-	<false/>
 	<key>SUEnableAutomaticChecks</key>
+	<false/>
+	<key>SUAutomaticallyUpdate</key>
 	<false/>
 	<key>SUFeedURL</key>
 	<string>https://github.com/oh-my-brew/miniTools/releases/latest/download/appcast.xml</string>
