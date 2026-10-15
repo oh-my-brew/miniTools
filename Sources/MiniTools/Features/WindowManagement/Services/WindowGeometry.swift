@@ -19,33 +19,51 @@ struct WindowFrameSettlementTracker {
     private let tolerance: CGFloat
     private let requiredStableSamples: Int
     private var previousSize: CGSize
-    private var observedResize: Bool
+    private var observedWidthChange: Bool
+    private var observedHeightChange: Bool
     private var stableSampleCount = 0
 
     init(
         initialFrame: CGRect,
         targetFrame: CGRect,
         tolerance: CGFloat = 1,
-        requiredStableSamples: Int = 4
+        requiredStableSamples: Int = 8
     ) {
         initialSize = initialFrame.size
         self.tolerance = tolerance
         self.requiredStableSamples = requiredStableSamples
         previousSize = initialFrame.size
-        observedResize = Self.sizesAreClose(
-            initialFrame.size,
-            targetFrame.size,
+        observedWidthChange = Self.dimensionsAreClose(
+            initialFrame.width,
+            targetFrame.width,
+            tolerance: tolerance
+        )
+        observedHeightChange = Self.dimensionsAreClose(
+            initialFrame.height,
+            targetFrame.height,
             tolerance: tolerance
         )
     }
 
     mutating func record(_ frame: CGRect) -> Bool {
         let currentSize = frame.size
-        if !Self.sizesAreClose(currentSize, initialSize, tolerance: tolerance) {
-            observedResize = true
+        if !Self.dimensionsAreClose(
+            currentSize.width,
+            initialSize.width,
+            tolerance: tolerance
+        ) {
+            observedWidthChange = true
+        }
+        if !Self.dimensionsAreClose(
+            currentSize.height,
+            initialSize.height,
+            tolerance: tolerance
+        ) {
+            observedHeightChange = true
         }
 
-        if observedResize,
+        if observedWidthChange,
+           observedHeightChange,
            Self.sizesAreClose(currentSize, previousSize, tolerance: tolerance) {
             stableSampleCount += 1
         } else {
@@ -53,7 +71,9 @@ struct WindowFrameSettlementTracker {
         }
         previousSize = currentSize
 
-        return observedResize && stableSampleCount >= requiredStableSamples
+        return observedWidthChange
+            && observedHeightChange
+            && stableSampleCount >= requiredStableSamples
     }
 
     private static func sizesAreClose(
@@ -63,6 +83,14 @@ struct WindowFrameSettlementTracker {
     ) -> Bool {
         abs(lhs.width - rhs.width) <= tolerance
             && abs(lhs.height - rhs.height) <= tolerance
+    }
+
+    private static func dimensionsAreClose(
+        _ lhs: CGFloat,
+        _ rhs: CGFloat,
+        tolerance: CGFloat
+    ) -> Bool {
+        abs(lhs - rhs) <= tolerance
     }
 }
 
@@ -342,7 +370,11 @@ enum WindowGeometry {
         to expected: CGFloat,
         availableLength: CGFloat
     ) -> Bool {
-        abs(actual - expected) <= max(12, availableLength * 0.02)
+        // Applications can enforce a size that differs slightly from the
+        // requested AXSize because of toolbars and minimum content constraints.
+        // Keep preset recognition proportional to the screen so H/L still uses
+        // the placement rules for that preset.
+        abs(actual - expected) <= max(24, availableLength * 0.05)
     }
 
     private static func originsAreClose(

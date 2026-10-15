@@ -125,7 +125,12 @@ enum WindowLayoutService {
             ) else {
                 return nil
             }
-            try setPosition(target.frame.origin, of: window)
+            try correctPositionUntilStable(
+                initialFrame: currentFrame,
+                targetFrame: target.frame,
+                window: window,
+                processIdentifier: application.processIdentifier
+            )
             return target
         }.value
     }
@@ -387,20 +392,12 @@ enum WindowLayoutService {
             window: window,
             processIdentifier: processIdentifier
         )
-        guard
-            let actualFrame,
-            var correctedPosition = WindowGeometry.correctedOriginAfterApplyingFrame(
-                actualFrame: actualFrame,
-                targetFrame: frame
-            ),
-            let correctedPositionValue = AXValueCreate(.cgPoint, &correctedPosition)
-        else {
-            return
-        }
-        try set(
-            correctedPositionValue,
-            attribute: kAXPositionAttribute as CFString,
-            on: window
+        guard let actualFrame else { return }
+        try correctPositionUntilStable(
+            initialFrame: actualFrame,
+            targetFrame: frame,
+            window: window,
+            processIdentifier: processIdentifier
         )
     }
 
@@ -431,7 +428,7 @@ enum WindowLayoutService {
             targetFrame: targetFrame
         )
         var latestFrame = initialFrame
-        let deadline = ProcessInfo.processInfo.systemUptime + 0.5
+        let deadline = ProcessInfo.processInfo.systemUptime + 0.8
 
         repeat {
             Thread.sleep(forTimeInterval: 0.025)
@@ -448,6 +445,37 @@ enum WindowLayoutService {
         } while ProcessInfo.processInfo.systemUptime < deadline
 
         return latestFrame
+    }
+
+    private static func correctPositionUntilStable(
+        initialFrame: CGRect,
+        targetFrame: CGRect,
+        window: AXUIElement,
+        processIdentifier: pid_t
+    ) throws {
+        var actualFrame = initialFrame
+
+        // A resize can arrive in separate width and height phases. Even after
+        // the size appears stable, Safari may apply one final origin change.
+        // Verify the WindowServer frame after each correction so one shortcut
+        // invocation converges on the requested position.
+        for _ in 0..<3 {
+            guard let correctedPosition = WindowGeometry.correctedOriginAfterApplyingFrame(
+                actualFrame: actualFrame,
+                targetFrame: targetFrame
+            ) else {
+                return
+            }
+            try setPosition(correctedPosition, of: window)
+            Thread.sleep(forTimeInterval: 0.08)
+            guard let refreshedFrame = currentFrame(
+                of: window,
+                processIdentifier: processIdentifier
+            ) else {
+                return
+            }
+            actualFrame = refreshedFrame
+        }
     }
 
     private static func currentFrame(
