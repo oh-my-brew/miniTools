@@ -14,6 +14,11 @@ struct WindowLayoutScreenGeometry: Equatable, Sendable {
     }
 }
 
+enum WindowFrameMutationOrder: Equatable, Sendable {
+    case positionThenSize
+    case sizeThenPosition
+}
+
 struct WindowFrameSettlementTracker {
     private let initialSize: CGSize
     private let tolerance: CGFloat
@@ -95,6 +100,33 @@ struct WindowFrameSettlementTracker {
 }
 
 enum WindowGeometry {
+    static func frameMutationOrder(
+        currentFrame: CGRect,
+        targetFrame: CGRect,
+        visibleFrame: CGRect,
+        tolerance: CGFloat = 1
+    ) -> WindowFrameMutationOrder {
+        let permittedFrame = visibleFrame.insetBy(dx: -tolerance, dy: -tolerance)
+        let targetSizeAtCurrentOrigin = CGRect(
+            origin: currentFrame.origin,
+            size: targetFrame.size
+        )
+        let currentSizeAtTargetOrigin = CGRect(
+            origin: targetFrame.origin,
+            size: currentFrame.size
+        )
+
+        // Move first only when the requested size would hit a screen edge at
+        // the current origin and the existing window can safely move to the
+        // target origin. If the existing size cannot fit there (for example,
+        // shrinking a full-width window into the right half), shrink first.
+        if !permittedFrame.contains(targetSizeAtCurrentOrigin),
+           permittedFrame.contains(currentSizeAtTargetOrigin) {
+            return .positionThenSize
+        }
+        return .sizeThenPosition
+    }
+
     static func targetFrame(for unitFrame: UnitWindowFrame, in visibleFrame: CGRect) -> CGRect {
         CGRect(
             x: round(visibleFrame.minX + visibleFrame.width * unitFrame.x),

@@ -74,6 +74,7 @@ enum WindowLayoutService {
             try setFrame(
                 target,
                 of: window,
+                visibleFrame: visibleFrame,
                 processIdentifier: application.processIdentifier
             )
             return WindowActionOutcome(candidateIndex: targets.firstIndex(of: target) ?? 0)
@@ -97,6 +98,7 @@ enum WindowLayoutService {
             try setFrame(
                 WindowGeometry.targetFrame(for: target.frame, in: visibleFrame),
                 of: window,
+                visibleFrame: visibleFrame,
                 processIdentifier: application.processIdentifier
             )
         }.value
@@ -160,6 +162,7 @@ enum WindowLayoutService {
             try setFrame(
                 target,
                 of: window,
+                visibleFrame: destination.visibleFrame,
                 processIdentifier: application.processIdentifier
             )
             return WindowActionOutcome(candidateIndex: 0)
@@ -183,6 +186,7 @@ enum WindowLayoutService {
             try setFrame(
                 WindowGeometry.centeredFrame(currentFrame, in: visibleFrame),
                 of: window,
+                visibleFrame: visibleFrame,
                 processIdentifier: application.processIdentifier
             )
             return WindowActionOutcome(candidateIndex: 0)
@@ -364,41 +368,45 @@ enum WindowLayoutService {
     private static func setFrame(
         _ frame: CGRect,
         of window: AXUIElement,
+        visibleFrame: CGRect,
         processIdentifier: pid_t
     ) throws {
         let initialFrame = WindowServerWindowInspector.frontmostVisibleWindowFrame(
             processIdentifier: processIdentifier
         ) ?? (try? readFrame(of: window))
-        var position = frame.origin
-        var size = frame.size
-        guard
-            let positionValue = AXValueCreate(.cgPoint, &position),
-            let sizeValue = AXValueCreate(.cgSize, &size)
-        else {
-            throw WindowLayoutError.unreadableWindowFrame
+        guard let initialFrame else { throw WindowLayoutError.unreadableWindowFrame }
+
+        let mutationOrder = WindowGeometry.frameMutationOrder(
+            currentFrame: initialFrame,
+            targetFrame: frame,
+            visibleFrame: visibleFrame
+        )
+        let resizedFrame: CGRect
+        switch mutationOrder {
+        case .positionThenSize:
+            let positionedFrame = try correctPositionUntilStable(
+                initialFrame: initialFrame,
+                targetFrame: frame,
+                window: window,
+                processIdentifier: processIdentifier
+            )
+            resizedFrame = try resizeUntilAccepted(
+                initialFrame: positionedFrame,
+                targetFrame: frame,
+                window: window,
+                processIdentifier: processIdentifier
+            )
+        case .sizeThenPosition:
+            resizedFrame = try resizeUntilAccepted(
+                initialFrame: initialFrame,
+                targetFrame: frame,
+                window: window,
+                processIdentifier: processIdentifier
+            )
         }
 
-        try set(positionValue, attribute: kAXPositionAttribute as CFString, on: window)
-        try set(sizeValue, attribute: kAXSizeAttribute as CFString, on: window)
-
-        // Safari and other AppKit applications finish AXSize changes
-        // asynchronously and can shift the window while doing so. An immediate
-        // second AXPosition write restores the previous tiled frame, while a
-        // fixed delay can still observe the old size. Wait until WindowServer
-        // reports a stable size, then place the window one final time.
-        let actualFrame = waitForFrameToSettle(
-            initialFrame: initialFrame,
-            targetFrame: frame,
-            window: window,
-            processIdentifier: processIdentifier
-        )
-        guard let actualFrame else { return }
-        let resizedFrame = try retrySizeUntilAccepted(
-            initialFrame: actualFrame,
-            targetFrame: frame,
-            window: window,
-            processIdentifier: processIdentifier
-        )
+        // A delayed resize can still shift the origin, so verify placement at
+        // the end regardless of the selected mutation order.
         try correctPositionUntilStable(
             initialFrame: resizedFrame,
             targetFrame: frame,
@@ -453,12 +461,13 @@ enum WindowLayoutService {
         return latestFrame
     }
 
+    @discardableResult
     private static func correctPositionUntilStable(
         initialFrame: CGRect,
         targetFrame: CGRect,
         window: AXUIElement,
         processIdentifier: pid_t
-    ) throws {
+    ) throws -> CGRect {
         var actualFrame = initialFrame
 
         // A resize can arrive in separate width and height phases. Even after
@@ -470,7 +479,7 @@ enum WindowLayoutService {
                 actualFrame: actualFrame,
                 targetFrame: targetFrame
             ) else {
-                return
+                return actualFrame
             }
             try setPosition(correctedPosition, of: window)
             Thread.sleep(forTimeInterval: 0.08)
@@ -478,10 +487,39 @@ enum WindowLayoutService {
                 of: window,
                 processIdentifier: processIdentifier
             ) else {
-                return
+                return actualFrame
             }
             actualFrame = refreshedFrame
         }
+        return actualFrame
+    }
+
+    private static func resizeUntilAccepted(
+        initialFrame: CGRect,
+        targetFrame: CGRect,
+        window: AXUIElement,
+        processIdentifier: pid_t
+    ) throws -> CGRect {
+        guard let correctedSize = WindowGeometry.correctedSizeAfterApplyingFrame(
+            actualFrame: initialFrame,
+            targetFrame: targetFrame
+        ) else {
+            return initialFrame
+        }
+        try setSize(correctedSize, of: window)
+
+        let settledFrame = waitForFrameToSettle(
+            initialFrame: initialFrame,
+            targetFrame: targetFrame,
+            window: window,
+            processIdentifier: processIdentifier
+        ) ?? initialFrame
+        return try retrySizeUntilAccepted(
+            initialFrame: settledFrame,
+            targetFrame: targetFrame,
+            window: window,
+            processIdentifier: processIdentifier
+        )
     }
 
     private static func retrySizeUntilAccepted(
