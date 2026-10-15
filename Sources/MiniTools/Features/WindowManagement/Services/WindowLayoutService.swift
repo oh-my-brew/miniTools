@@ -80,6 +80,56 @@ enum WindowLayoutService {
         }.value
     }
 
+    static func applyComposedSize(_ target: ComposedWindowSizeTarget) async throws {
+        try AccessibilityAuthorization.requirePermission()
+        let application = try await activeApplication()
+        let geometries = await WindowGeometry.screenGeometries()
+
+        try await Task.detached(priority: .userInitiated) {
+            let window = try focusedWindow(for: application)
+            try ensureWindowCanBeAdjusted(window)
+
+            let currentFrame = try frame(of: window, for: application)
+            let visibleFrame = WindowGeometry.screenGeometry(
+                for: currentFrame,
+                geometries: geometries
+            ).visibleFrame
+            try setFrame(
+                WindowGeometry.targetFrame(for: target.frame, in: visibleFrame),
+                of: window,
+                processIdentifier: application.processIdentifier
+            )
+        }.value
+    }
+
+    static func applyComposedPlacement(
+        _ placement: ComposedWindowPlacement
+    ) async throws -> ComposedWindowPlacementTarget? {
+        try AccessibilityAuthorization.requirePermission()
+        let application = try await activeApplication()
+        let geometries = await WindowGeometry.screenGeometries()
+
+        return try await Task.detached(priority: .userInitiated) {
+            let window = try focusedWindow(for: application)
+            try ensureWindowCanBeAdjusted(window)
+
+            let currentFrame = try frame(of: window, for: application)
+            let visibleFrame = WindowGeometry.screenGeometry(
+                for: currentFrame,
+                geometries: geometries
+            ).visibleFrame
+            guard let target = WindowGeometry.composedPlacementTarget(
+                currentFrame: currentFrame,
+                visibleFrame: visibleFrame,
+                placement: placement
+            ) else {
+                return nil
+            }
+            try setPosition(target.frame.origin, of: window)
+            return target
+        }.value
+    }
+
     static func moveFocusedWindowToNextScreen() async throws -> WindowActionOutcome {
         try AccessibilityAuthorization.requirePermission()
         let application = try await activeApplication()
@@ -352,6 +402,17 @@ enum WindowLayoutService {
             attribute: kAXPositionAttribute as CFString,
             on: window
         )
+    }
+
+    private static func setPosition(
+        _ point: CGPoint,
+        of window: AXUIElement
+    ) throws {
+        var position = point
+        guard let value = AXValueCreate(.cgPoint, &position) else {
+            throw WindowLayoutError.unreadableWindowFrame
+        }
+        try set(value, attribute: kAXPositionAttribute as CFString, on: window)
     }
 
     private static func waitForFrameToSettle(

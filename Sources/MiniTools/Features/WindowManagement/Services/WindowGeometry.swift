@@ -198,6 +198,161 @@ enum WindowGeometry {
         )
     }
 
+    static func composedPlacementTarget(
+        currentFrame: CGRect,
+        visibleFrame: CGRect,
+        placement: ComposedWindowPlacement
+    ) -> ComposedWindowPlacementTarget? {
+        let fullWidth = dimensionIsClose(
+            currentFrame.width,
+            to: visibleFrame.width,
+            availableLength: visibleFrame.width
+        )
+        let fullHeight = dimensionIsClose(
+            currentFrame.height,
+            to: visibleFrame.height,
+            availableLength: visibleFrame.height
+        )
+        let halfHeight = dimensionIsClose(
+            currentFrame.height,
+            to: visibleFrame.height * 0.5,
+            availableLength: visibleFrame.height
+        )
+        let knownNarrowWidth = [0.5, 1.0 / 3.0].contains { ratio in
+            dimensionIsClose(
+                currentFrame.width,
+                to: visibleFrame.width * ratio,
+                availableLength: visibleFrame.width
+            )
+        }
+
+        if fullWidth, fullHeight {
+            return nil
+        }
+
+        if fullWidth, halfHeight {
+            switch placement {
+            case .leading:
+                return placementTarget(
+                    currentFrame,
+                    x: visibleFrame.minX,
+                    y: visibleFrame.minY,
+                    id: "position.top",
+                    title: "上半屏"
+                )
+            case .trailing:
+                return placementTarget(
+                    currentFrame,
+                    x: visibleFrame.minX,
+                    y: visibleFrame.maxY - currentFrame.height,
+                    id: "position.bottom",
+                    title: "下半屏"
+                )
+            case .center:
+                return nil
+            }
+        }
+
+        if halfHeight, knownNarrowWidth {
+            let topY = visibleFrame.minY
+            let bottomY = visibleFrame.maxY - currentFrame.height
+            switch placement {
+            case .leading:
+                let leftX = visibleFrame.minX
+                let isLeft = originsAreClose(currentFrame.minX, leftX, visibleFrame.width)
+                let isTop = originsAreClose(currentFrame.minY, topY, visibleFrame.height)
+                let targetY = isLeft && isTop ? bottomY : topY
+                return placementTarget(
+                    currentFrame,
+                    x: leftX,
+                    y: targetY,
+                    id: targetY == topY ? "position.topLeft" : "position.bottomLeft",
+                    title: targetY == topY ? "左上区域" : "左下区域"
+                )
+            case .trailing:
+                let rightX = visibleFrame.maxX - currentFrame.width
+                let isRight = originsAreClose(currentFrame.minX, rightX, visibleFrame.width)
+                let isTop = originsAreClose(currentFrame.minY, topY, visibleFrame.height)
+                let targetY = isRight && isTop ? bottomY : topY
+                return placementTarget(
+                    currentFrame,
+                    x: rightX,
+                    y: targetY,
+                    id: targetY == topY ? "position.topRight" : "position.bottomRight",
+                    title: targetY == topY ? "右上区域" : "右下区域"
+                )
+            case .center:
+                let centered = centeredFrame(currentFrame, in: visibleFrame)
+                return ComposedWindowPlacementTarget(
+                    frame: centered,
+                    statisticsID: "position.center",
+                    title: "窗口居中"
+                )
+            }
+        }
+
+        switch placement {
+        case .leading:
+            return placementTarget(
+                currentFrame,
+                x: visibleFrame.minX,
+                y: round(visibleFrame.midY - currentFrame.height / 2),
+                id: "position.left",
+                title: "窗口移至左侧"
+            )
+        case .trailing:
+            return placementTarget(
+                currentFrame,
+                x: visibleFrame.maxX - currentFrame.width,
+                y: round(visibleFrame.midY - currentFrame.height / 2),
+                id: "position.right",
+                title: "窗口移至右侧"
+            )
+        case .center:
+            let centered = centeredFrame(currentFrame, in: visibleFrame)
+            return ComposedWindowPlacementTarget(
+                frame: centered,
+                statisticsID: "position.center",
+                title: "窗口居中"
+            )
+        }
+    }
+
+    private static func placementTarget(
+        _ currentFrame: CGRect,
+        x: CGFloat,
+        y: CGFloat,
+        id: String,
+        title: String
+    ) -> ComposedWindowPlacementTarget {
+        ComposedWindowPlacementTarget(
+            frame: CGRect(
+                x: round(x),
+                y: round(y),
+                width: currentFrame.width,
+                height: currentFrame.height
+            ),
+            statisticsID: id,
+            title: title
+        )
+    }
+
+    private static func dimensionIsClose(
+        _ actual: CGFloat,
+        to expected: CGFloat,
+        availableLength: CGFloat
+    ) -> Bool {
+        abs(actual - expected) <= max(12, availableLength * 0.02)
+    }
+
+    private static func originsAreClose(
+        _ actual: CGFloat,
+        _ expected: CGFloat,
+        _ availableLength: CGFloat
+    ) -> Bool {
+        abs(actual - expected) <= max(10, availableLength * 0.01)
+    }
+
     static func screenIndex(
         containing point: CGPoint,
         geometries: [WindowLayoutScreenGeometry]

@@ -128,6 +128,45 @@ final class AppSettingsTests: XCTestCase {
     }
 
     @MainActor
+    func testWindowManagementModeDefaultsToClassicAndPersistsNewMode() throws {
+        let (defaults, suiteName) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults)
+
+        XCTAssertEqual(settings.windowManagementMode, .classic)
+
+        settings.updateWindowManagementMode(.sizeAndPosition)
+
+        XCTAssertEqual(
+            AppSettings(defaults: defaults).windowManagementMode,
+            .sizeAndPosition
+        )
+    }
+
+    @MainActor
+    func testPersistsComposedWindowControlShortcutSeparately() throws {
+        let (defaults, suiteName) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults)
+        let shortcut = KeyboardShortcut(
+            keyCode: UInt32(kVK_ANSI_M),
+            carbonModifiers: UInt32(controlKey | optionKey)
+        )
+
+        settings.updateComposedWindowControlShortcut(shortcut, for: .fullOrHalfHeight)
+
+        let restored = AppSettings(defaults: defaults)
+        XCTAssertEqual(
+            restored.composedWindowControlShortcut(for: .fullOrHalfHeight),
+            shortcut
+        )
+        XCTAssertEqual(
+            restored.windowControlShortcut(for: .upperLeft),
+            WindowControlCatalog.defaultShortcuts[.upperLeft]
+        )
+    }
+
+    @MainActor
     func testEnablesEveryCursorHighlightStyleByDefault() throws {
         let (defaults, suiteName) = try makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
