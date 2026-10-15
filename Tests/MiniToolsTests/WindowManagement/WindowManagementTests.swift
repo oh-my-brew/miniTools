@@ -417,6 +417,26 @@ final class WindowManagementTests: XCTestCase {
         XCTAssertTrue(tracker.record(constrained))
     }
 
+    func testFrameSettlementDefaultRequiresAQuietWindowAfterResize() {
+        let initial = CGRect(x: 300, y: 200, width: 900, height: 700)
+        let target = CGRect(x: 0, y: 25, width: 1440, height: 875)
+        var tracker = WindowFrameSettlementTracker(
+            initialFrame: initial,
+            targetFrame: target
+        )
+        let widthPhase = CGRect(x: 0, y: 200, width: 1440, height: 700)
+        let finalPhase = CGRect(x: 0, y: 25, width: 1440, height: 875)
+
+        for _ in 0..<9 {
+            XCTAssertFalse(tracker.record(widthPhase))
+        }
+        XCTAssertFalse(tracker.record(finalPhase))
+        for _ in 0..<7 {
+            XCTAssertFalse(tracker.record(finalPhase))
+        }
+        XCTAssertTrue(tracker.record(finalPhase))
+    }
+
     func testWindowServerInspectorReturnsFrontmostAdjustableWindowFrame() {
         let processIdentifier: pid_t = 42
         let tinyFrame = CGRect(x: 0, y: 0, width: 80, height: 30)
