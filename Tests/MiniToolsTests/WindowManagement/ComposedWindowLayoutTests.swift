@@ -126,9 +126,9 @@ final class ComposedWindowLayoutTests: XCTestCase {
         XCTAssertEqual(center.frame, current)
     }
 
-    func testConstrainedHalfSizeStillUsesCornerPlacement() throws {
+    func testStronglyConstrainedHalfSizeStillUsesCornerPlacement() throws {
         let visible = CGRect(x: 0, y: 25, width: 1440, height: 875)
-        let constrained = CGRect(x: 250, y: 260, width: 700, height: 405)
+        let constrained = CGRect(x: 250, y: 180, width: 850, height: 560)
 
         let left = try XCTUnwrap(WindowGeometry.composedPlacementTarget(
             currentFrame: constrained,
@@ -142,7 +142,20 @@ final class ComposedWindowLayoutTests: XCTestCase {
         ))
 
         XCTAssertEqual(left.frame.origin, CGPoint(x: 0, y: 25))
-        XCTAssertEqual(right.frame.origin, CGPoint(x: 740, y: 25))
+        XCTAssertEqual(right.frame.origin, CGPoint(x: 590, y: 25))
+    }
+
+    func testLargeArbitraryWindowIsNotTreatedAsFullSize() throws {
+        let visible = CGRect(x: 0, y: 25, width: 1440, height: 875)
+        let current = CGRect(x: 140, y: 110, width: 1240, height: 740)
+
+        let left = try XCTUnwrap(WindowGeometry.composedPlacementTarget(
+            currentFrame: current,
+            visibleFrame: visible,
+            placement: .leading
+        ))
+
+        XCTAssertEqual(left.frame.origin, CGPoint(x: 0, y: 93))
     }
 
     func testClearlyUnknownSizeStillUsesGenericPlacement() throws {
