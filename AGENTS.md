@@ -141,13 +141,13 @@
 
 ## 本地构建与签名
 
-依赖辅助功能或输入监控的本地调试，必须使用：
+`Scripts/run-debug.sh` 仅供用户明确要求的本地功能调试使用；常规开发会话不得运行它，也不得启动本地构建验证真实功能：
 
 ```bash
 ./Scripts/run-debug.sh
 ```
 
-该脚本使用稳定的 Apple Development 身份组装固定路径 `dist/miniTools.app`，再替换并启动应用。保持固定 Bundle ID、固定路径和稳定签名，才能让 TCC 权限在重复构建后继续有效。
+该脚本使用稳定的 Apple Development 身份组装固定路径 `dist/miniTools.app`，再替换并启动应用。获得明确本地调试要求时，必须保持固定 Bundle ID、固定路径和稳定签名，才能让 TCC 权限在重复构建后继续有效。
 
 不要使用 `swift run MiniTools` 验证权限相关功能；不要把 ad-hoc 构建覆盖到 `dist/miniTools.app`。发行包必须留在 `dist/release/miniTools.app`，否则下一次本地调试可能持续报告辅助功能状态异常。
 
@@ -163,7 +163,7 @@ CODE_SIGN_IDENTITY="Apple Development: Name (TEAMID)" ./Scripts/build-app.sh
 
 ## 最低验证要求
 
-任何源码修改至少运行：
+任何源码修改至少运行不会启动应用或修改真实系统状态的自动化检查：
 
 ```bash
 swift test
@@ -174,13 +174,13 @@ git diff --check
 
 | 改动 | 额外验证 |
 | --- | --- |
-| UI、快捷键、AX、鼠标监听 | `./Scripts/run-debug.sh`，手动覆盖相关键盘路径和权限状态。 |
+| UI、快捷键、AX、鼠标监听 | 补充可隔离的单元测试；不运行 `./Scripts/run-debug.sh` 或手动功能测试，交付时明确记录运行时未验证。 |
 | Info.plist | `plutil -lint Support/Info.plist`。 |
 | Shell 脚本 | `bash -n Scripts/*.sh`。 |
 | 架构或依赖 | `swift build -c release --triple arm64-apple-macosx26.0 --scratch-path .build/ci-arm64`。 |
 | 发行打包 | 校验 ZIP 的 SHA-256、`lipo -archs` 为 arm64，并检查 `codesign`、`stapler validate` 与 `spctl --assess`。不要启动发行包代替固定路径的稳定签名调试包。 |
 
-若环境不允许完成某项运行时验证，交付时必须明确写出未验证项，不能把“编译通过”描述成“功能已验证”。
+开发与发行会话默认不做本机功能测试。交付时必须明确写出运行时未验证项，不能把编译或单元测试通过描述成“功能已验证”。
 
 ## 版本、GitHub Release 与 Homebrew
 
@@ -193,6 +193,16 @@ git diff --check
 - Tap 的 Autobump 只创建升级 PR，不会自动合并。BrewTestBot 通过后，合并仍是单独的外部写操作。
 - 不要假定应用 Release workflow 会直接修改 Homebrew Tap；当前两条流水线相互独立。
 - 创建标签/Release、触发 Autobump、合并 Tap PR 等会改变远端状态的操作，必须来自用户明确授权。
+
+### 开发完成后的发行
+
+- 用户已决定：正常开发任务的代码进入 `master` 且源码 CI 通过后，自动创建一个新的 Release subagent；用户明确说“只开发”或“不要发布”时除外。
+- 不使用固定历史会话。Release subagent 只接收产品名、准确源码 commit、变更摘要、自动化检查和未验证项，并使用独立 Git worktree。
+- Release subagent 先确认没有同产品发行正在进行，再按 `DISTRIBUTION.md` 完成展示版本 PR、签名 tag、Developer ID 签名、公证和 GitHub Release；主会话保持可继续响应其他任务。
+- 产品 Release 完整验证后，获取远程 `oh-my-brew/homebrew-tap` 默认分支的准确 commit，并从同一 commit 读取 `AGENTS.md` 与 `RELEASES.md`。不使用本地同级 Tap checkout 作为正式规则来源，也不修改其本地工作树。
+- Homebrew 阶段仍由同一个 Release subagent 继续，不再创建额外 Tap subagent。其按远程实时状态完成 Autobump、Cask PR、检查、合并和 M1/M2/M5 定向安装。
+- 如果无法创建 subagent、发行状态冲突或需要用户处理权限，停止自动链路并报告；不在开发主会话中执行长时间发行。
+- 上述自动发行与三机定向安装是用户确认的默认工作流；版本冲突、签名/凭据失败、需要改变发行范围或工作流安全检查失败时再请求用户处理。
 
 完整发行命令、Gatekeeper 限制和公开发行检查见 `DISTRIBUTION.md`。
 
