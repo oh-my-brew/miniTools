@@ -2,6 +2,7 @@ import SwiftUI
 
 private enum SettingsCategory: String, CaseIterable, Identifiable {
     case general
+    case defaultApplications
     case windowManagement
     case closedLidRunning
     case dsStoreManagement
@@ -14,6 +15,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general: "通用"
+        case .defaultApplications: "默认应用"
         case .windowManagement: "窗口管理"
         case .closedLidRunning: "合盖运行"
         case .dsStoreManagement: "DS_Store 管理"
@@ -27,6 +29,8 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .general:
             "配置应用启动、工具面板与转换参数。"
+        case .defaultApplications:
+            "查看文本与代码文件的当前默认应用，并按需改为 Sublime Text。"
         case .windowManagement:
             "配置窗口布局、跨屏操作与全局快捷键。"
         case .closedLidRunning:
@@ -45,6 +49,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .general: "gearshape"
+        case .defaultApplications: "doc.text"
         case .windowManagement: "macwindow"
         case .closedLidRunning: "laptopcomputer"
         case .dsStoreManagement: "doc.badge.gearshape"
@@ -128,6 +133,8 @@ private struct SettingsCategoryDetail: View {
             switch category {
             case .general:
                 generalSettings
+            case .defaultApplications:
+                DefaultApplicationSettingsView()
             case .windowManagement:
                 windowManagementSettings
             case .closedLidRunning:
