@@ -149,6 +149,20 @@ enum WindowGeometry {
         return targetFrame.origin
     }
 
+    static func correctedSizeAfterApplyingFrame(
+        actualFrame: CGRect,
+        targetFrame: CGRect,
+        tolerance: CGFloat = 8
+    ) -> CGSize? {
+        guard
+            abs(actualFrame.width - targetFrame.width) > tolerance
+                || abs(actualFrame.height - targetFrame.height) > tolerance
+        else {
+            return nil
+        }
+        return targetFrame.size
+    }
+
     private static func constrainedCandidateIndex(
         currentFrame: CGRect,
         candidates: [CGRect],
@@ -231,34 +245,44 @@ enum WindowGeometry {
         visibleFrame: CGRect,
         placement: ComposedWindowPlacement
     ) -> ComposedWindowPlacementTarget? {
-        let fullWidth = dimensionIsClose(
+        let strictFullWidth = dimensionIsClose(
             currentFrame.width,
             to: visibleFrame.width,
-            availableLength: visibleFrame.width
+            availableLength: visibleFrame.width,
+            relativeTolerance: 0.05
         )
-        let fullHeight = dimensionIsClose(
+        let strictFullHeight = dimensionIsClose(
             currentFrame.height,
             to: visibleFrame.height,
-            availableLength: visibleFrame.height
+            availableLength: visibleFrame.height,
+            relativeTolerance: 0.05
+        )
+        let placementFullWidth = dimensionIsClose(
+            currentFrame.width,
+            to: visibleFrame.width,
+            availableLength: visibleFrame.width,
+            relativeTolerance: 0.10
         )
         let halfHeight = dimensionIsClose(
             currentFrame.height,
             to: visibleFrame.height * 0.5,
-            availableLength: visibleFrame.height
+            availableLength: visibleFrame.height,
+            relativeTolerance: 0.15
         )
         let knownNarrowWidth = [0.5, 1.0 / 3.0].contains { ratio in
             dimensionIsClose(
                 currentFrame.width,
                 to: visibleFrame.width * ratio,
-                availableLength: visibleFrame.width
+                availableLength: visibleFrame.width,
+                relativeTolerance: 0.10
             )
         }
 
-        if fullWidth, fullHeight {
+        if strictFullWidth, strictFullHeight {
             return nil
         }
 
-        if fullWidth, halfHeight {
+        if placementFullWidth, halfHeight {
             switch placement {
             case .leading:
                 return placementTarget(
@@ -368,13 +392,14 @@ enum WindowGeometry {
     private static func dimensionIsClose(
         _ actual: CGFloat,
         to expected: CGFloat,
-        availableLength: CGFloat
+        availableLength: CGFloat,
+        relativeTolerance: CGFloat
     ) -> Bool {
         // Applications can enforce a size that differs slightly from the
         // requested AXSize because of toolbars and minimum content constraints.
         // Keep preset recognition proportional to the screen so H/L still uses
         // the placement rules for that preset.
-        abs(actual - expected) <= max(24, availableLength * 0.05)
+        abs(actual - expected) <= max(24, availableLength * relativeTolerance)
     }
 
     private static func originsAreClose(

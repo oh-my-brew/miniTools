@@ -399,6 +399,24 @@ final class WindowManagementTests: XCTestCase {
         )
     }
 
+    func testRetriesSizeWhenApplicationHasNotAcceptedBothDimensions() {
+        let target = CGRect(x: 0, y: 25, width: 1440, height: 875)
+
+        XCTAssertEqual(
+            WindowGeometry.correctedSizeAfterApplyingFrame(
+                actualFrame: CGRect(x: 0, y: 25, width: 1440, height: 760),
+                targetFrame: target
+            ),
+            target.size
+        )
+        XCTAssertNil(
+            WindowGeometry.correctedSizeAfterApplyingFrame(
+                actualFrame: CGRect(x: 0, y: 25, width: 1436, height: 870),
+                targetFrame: target
+            )
+        )
+    }
+
     func testFrameSettlementWaitsForResizeAndStableSamples() {
         let initial = CGRect(x: -1440, y: 555, width: 960, height: 525)
         let target = CGRect(x: -1920, y: 0, width: 1280, height: 1080)

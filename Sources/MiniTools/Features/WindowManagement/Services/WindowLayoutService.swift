@@ -393,8 +393,14 @@ enum WindowLayoutService {
             processIdentifier: processIdentifier
         )
         guard let actualFrame else { return }
-        try correctPositionUntilStable(
+        let resizedFrame = try retrySizeUntilAccepted(
             initialFrame: actualFrame,
+            targetFrame: frame,
+            window: window,
+            processIdentifier: processIdentifier
+        )
+        try correctPositionUntilStable(
+            initialFrame: resizedFrame,
             targetFrame: frame,
             window: window,
             processIdentifier: processIdentifier
@@ -476,6 +482,48 @@ enum WindowLayoutService {
             }
             actualFrame = refreshedFrame
         }
+    }
+
+    private static func retrySizeUntilAccepted(
+        initialFrame: CGRect,
+        targetFrame: CGRect,
+        window: AXUIElement,
+        processIdentifier: pid_t
+    ) throws -> CGRect {
+        var actualFrame = initialFrame
+
+        // Safari can acknowledge an AXSize write before both dimensions reach
+        // their final values. Retry the requested size within this invocation;
+        // bounded retries also avoid hanging on applications with hard minimums.
+        for _ in 0..<2 {
+            guard let correctedSize = WindowGeometry.correctedSizeAfterApplyingFrame(
+                actualFrame: actualFrame,
+                targetFrame: targetFrame
+            ) else {
+                return actualFrame
+            }
+            try setSize(correctedSize, of: window)
+            Thread.sleep(forTimeInterval: 0.12)
+            guard let refreshedFrame = currentFrame(
+                of: window,
+                processIdentifier: processIdentifier
+            ) else {
+                return actualFrame
+            }
+            actualFrame = refreshedFrame
+        }
+        return actualFrame
+    }
+
+    private static func setSize(
+        _ size: CGSize,
+        of window: AXUIElement
+    ) throws {
+        var size = size
+        guard let value = AXValueCreate(.cgSize, &size) else {
+            throw WindowLayoutError.unreadableWindowFrame
+        }
+        try set(value, attribute: kAXSizeAttribute as CFString, on: window)
     }
 
     private static func currentFrame(
