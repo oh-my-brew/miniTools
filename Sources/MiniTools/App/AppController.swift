@@ -5,6 +5,7 @@ final class AppController: NSObject {
     private let applicationContext: ApplicationContext
     private var settings: AppSettings { applicationContext.settings }
     private let statusMenuController = StatusMenuController()
+    private let appUpdateController = AppUpdateController()
     private lazy var windowControlController = WindowControlController(
         usageStatistics: applicationContext.usageStatistics
     )
@@ -82,6 +83,9 @@ final class AppController: NSObject {
         }
         statusMenuController.onOpenSettings = { [weak self] in
             self?.showSettings()
+        }
+        statusMenuController.onCheckForUpdates = { [weak self] in
+            self?.appUpdateController.checkForUpdates()
         }
         statusMenuController.onToggleClosedLidRunning = { [weak self] in
             guard let self else { return }

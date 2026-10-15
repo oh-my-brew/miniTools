@@ -182,27 +182,24 @@ git diff --check
 
 开发与发行会话默认不做本机功能测试。交付时必须明确写出运行时未验证项，不能把编译或单元测试通过描述成“功能已验证”。
 
-## 版本、GitHub Release 与 Homebrew
+## 版本与 GitHub Release
 
-- `Support/Info.plist` 的展示版本使用 `YYYY.MM.DD`。
+- `Support/Info.plist` 的展示版本使用完整的 `YYYY.MM.DD.N`。
 - Git 标签使用 `vYYYY.MM.DD.N`；GitHub Release 产物和 Homebrew Cask 使用不带 `v` 的 `YYYY.MM.DD.N`，同一天从 `1` 开始递增。
 - `.github/workflows/ci.yml` 负责 push、PR 和手动 CI；`.github/workflows/release.yml` 只由 `v*` 标签触发，并校验标签日期与 Info.plist 一致。
 - `.github/workflows/codeql.yml` 负责 code scanning，仓库已关闭 CodeQL default setup：`actions` 和 `ruby` 在 push、PR 和定时任务上运行；Swift 提取器要先完整构建一遍工程（实测 13–18 分钟），只在每周定时、手动触发和合并后的推送里运行，PR 上跳过，不要改回让每次 PR 都跑 Swift。
-- 正常顺序是：更新展示版本并提交 → 推送 → 等待 CI 成功 → 创建带注释标签并推送 → 等待 Release 完成 → 触发 Tap Autobump。
-- Homebrew Tap 位于同级仓库 `../homebrew-tap`，Cask 是 `Casks/minitools.rb`。
-- Tap 的 Autobump 只创建升级 PR，不会自动合并。BrewTestBot 通过后，合并仍是单独的外部写操作。
-- 不要假定应用 Release workflow 会直接修改 Homebrew Tap；当前两条流水线相互独立。
-- 创建标签/Release、触发 Autobump、合并 Tap PR 等会改变远端状态的操作，必须来自用户明确授权。
+- 正常顺序是：更新展示版本并提交 → 推送 → 等待 CI 成功 → 创建带注释标签并推送 → 等待 Release、签名 appcast 和全部资产完成。
+- Release 完成即为产品发行完成，不等待 Homebrew Tap，不触发 Autobump，也不安装三台设备。
+- Homebrew Tap 每日定时发现 Release 并创建 PR；检查、合并和 Homebrew 升级属于独立维护流程。
 
 ### 开发完成后的发行
 
 - 用户已决定：正常开发任务的代码进入 `master` 且源码 CI 通过后，自动创建一个新的 Release subagent；用户明确说“只开发”或“不要发布”时除外。
 - 不使用固定历史会话。Release subagent 只接收产品名、准确源码 commit、变更摘要、自动化检查和未验证项，并使用独立 Git worktree。
-- Release subagent 先确认没有同产品发行正在进行，再按 `DISTRIBUTION.md` 完成展示版本 PR、签名 tag、Developer ID 签名、公证和 GitHub Release；主会话保持可继续响应其他任务。
-- 产品 Release 完整验证后，获取远程 `oh-my-brew/homebrew-tap` 默认分支的准确 commit，并从同一 commit 读取 `AGENTS.md` 与 `RELEASES.md`。不使用本地同级 Tap checkout 作为正式规则来源，也不修改其本地工作树。
-- Homebrew 阶段仍由同一个 Release subagent 继续，不再创建额外 Tap subagent。其按远程实时状态完成 Autobump、Cask PR、检查、合并和 M1/M2/M5 定向安装。
+- Release subagent 先确认没有同产品发行正在进行，再按 `DISTRIBUTION.md` 完成版本 PR、签名 tag、Developer ID 签名、公证、GitHub Release 和签名 appcast；主会话保持可继续响应其他任务。
+- 产品 Release 完整验证后停止，不读取或修改 Homebrew Tap，不等待定时 Autobump。
 - 如果无法创建 subagent、发行状态冲突或需要用户处理权限，停止自动链路并报告；不在开发主会话中执行长时间发行。
-- 上述自动发行与三机定向安装是用户确认的默认工作流；版本冲突、签名/凭据失败、需要改变发行范围或工作流安全检查失败时再请求用户处理。
+- 上述自动产品发行是用户确认的默认工作流；版本冲突、签名/凭据失败、需要改变发行范围或工作流安全检查失败时再请求用户处理。
 
 完整发行命令、Gatekeeper 限制和公开发行检查见 `DISTRIBUTION.md`。
 

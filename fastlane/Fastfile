@@ -19,13 +19,13 @@ platform :mac do
     ).strip
     tag = ENV["GITHUB_REF_NAME"].to_s
 
+    UI.user_error!("Version must use YYYY.MM.DD.N") unless app_version.match?(/^\d{4}\.\d{2}\.\d{2}\.[1-9]\d*$/)
+    version = app_version
+    expected_tag = "v#{version}"
     if ENV["GITHUB_EVENT_NAME"] == "push"
-      version = apple_ci_calendar_release_version(marketing_version: app_version, tag: tag)
+      UI.user_error!("Tag #{tag} does not match #{expected_tag}") unless tag == expected_tag
     else
-      revision = ENV.fetch("APPLE_CI_RELEASE_REVISION", "1")
-      UI.user_error!("Revision must be a positive integer") unless revision.match?(/^[1-9]\d*$/)
-      version = "#{app_version}.#{revision}"
-      tag = "v#{version}"
+      tag = expected_tag
     end
 
     ENV["VERSION"] = version

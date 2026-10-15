@@ -26,3 +26,48 @@ jobs:
       APPLE_ASC_PRIVATE_KEY_BASE64: ${{ secrets.APPLE_ASC_PRIVATE_KEY_BASE64 }}
       APPLE_MATCH_PASSWORD: ${{ secrets.APPLE_MATCH_PASSWORD }}
       APPLE_MATCH_GIT_PRIVATE_KEY: ${{ secrets.APPLE_MATCH_GIT_PRIVATE_KEY }}
+
+  publish-appcast:
+    if: github.event_name == 'push'
+    needs: release
+    runs-on: macos-26
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+      SPARKLE_VERSION: 2.10.0
+    steps:
+      - name: Download release archive and Sparkle tools
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p "$RUNNER_TEMP/archives" "$RUNNER_TEMP/sparkle"
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "miniTools-$version.zip" \
+            --dir "$RUNNER_TEMP/archives"
+          gh release download "$SPARKLE_VERSION" \
+            --repo sparkle-project/Sparkle \
+            --pattern "Sparkle-$SPARKLE_VERSION.tar.xz" \
+            --dir "$RUNNER_TEMP/sparkle"
+          tar -xJf "$RUNNER_TEMP/sparkle/Sparkle-$SPARKLE_VERSION.tar.xz" \
+            -C "$RUNNER_TEMP/sparkle"
+
+      - name: Generate signed appcast
+        run: |
+          set -euo pipefail
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | \
+            "$RUNNER_TEMP/sparkle/bin/generate_appcast" \
+              --ed-key-file - \
+              --download-url-prefix "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/" \
+              --maximum-versions 1 \
+              "$RUNNER_TEMP/archives"
+          test -s "$RUNNER_TEMP/archives/appcast.xml"
+          grep -q 'sparkle:edSignature=' "$RUNNER_TEMP/archives/appcast.xml"
+          grep -q "miniTools-${GITHUB_REF_NAME#v}.zip" "$RUNNER_TEMP/archives/appcast.xml"
+
+      - name: Publish appcast
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            "$RUNNER_TEMP/archives/appcast.xml" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber

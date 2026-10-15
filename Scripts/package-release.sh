@@ -3,11 +3,11 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION="${1:?Usage: package-release.sh <release-version>}"
-if [[ ! "$VERSION" =~ ^([0-9]{4}\.[0-9]{2}\.[0-9]{2})\.[1-9][0-9]*$ ]]; then
+if [[ ! "$VERSION" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[1-9][0-9]*$ ]]; then
     echo "Release version must use YYYY.MM.DD.N format: $VERSION" >&2
     exit 1
 fi
-APP_VERSION="${APP_VERSION:-${BASH_REMATCH[1]}}"
+APP_VERSION="${APP_VERSION:-$VERSION}"
 APP_DIR="$ROOT/dist/release/miniTools.app"
 ARCHIVE_NAME="miniTools-$VERSION.zip"
 ARCHIVE_PATH="$ROOT/dist/$ARCHIVE_NAME"

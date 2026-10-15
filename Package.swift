@@ -11,6 +11,12 @@ let package = Package(
         .executable(name: "MiniTools", targets: ["MiniTools"]),
         .executable(name: "MiniToolsPowerHelper", targets: ["MiniToolsPowerHelper"])
     ],
+    dependencies: [
+        .package(
+            url: "https://github.com/sparkle-project/Sparkle",
+            exact: "2.10.0"
+        )
+    ],
     targets: [
         .target(
             name: "MiniToolsPowerSupport",
@@ -21,7 +27,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "MiniTools",
-            dependencies: ["MiniToolsPowerSupport"],
+            dependencies: [
+                "MiniToolsPowerSupport",
+                .product(name: "Sparkle", package: "Sparkle")
+            ],
             path: "Sources/MiniTools",
             linkerSettings: [
                 .linkedFramework("AppKit"),
