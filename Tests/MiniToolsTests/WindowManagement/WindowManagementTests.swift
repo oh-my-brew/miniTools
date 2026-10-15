@@ -417,6 +417,45 @@ final class WindowManagementTests: XCTestCase {
         )
     }
 
+    func testMovesBeforeGrowingWhenCurrentOriginWouldClipTargetSize() {
+        let visibleFrame = CGRect(x: 0, y: 25, width: 1440, height: 875)
+
+        XCTAssertEqual(
+            WindowGeometry.frameMutationOrder(
+                currentFrame: CGRect(x: 360, y: 244, width: 720, height: 438),
+                targetFrame: visibleFrame,
+                visibleFrame: visibleFrame
+            ),
+            .positionThenSize
+        )
+    }
+
+    func testShrinksBeforeMovingWhenCurrentSizeWouldClipAtTargetOrigin() {
+        let visibleFrame = CGRect(x: 0, y: 25, width: 1440, height: 875)
+
+        XCTAssertEqual(
+            WindowGeometry.frameMutationOrder(
+                currentFrame: visibleFrame,
+                targetFrame: CGRect(x: 720, y: 25, width: 720, height: 875),
+                visibleFrame: visibleFrame
+            ),
+            .sizeThenPosition
+        )
+    }
+
+    func testKeepsSizeFirstWhenTargetSizeFitsAtCurrentOrigin() {
+        let visibleFrame = CGRect(x: 0, y: 25, width: 1440, height: 875)
+
+        XCTAssertEqual(
+            WindowGeometry.frameMutationOrder(
+                currentFrame: CGRect(x: 0, y: 25, width: 720, height: 875),
+                targetFrame: CGRect(x: 720, y: 25, width: 720, height: 875),
+                visibleFrame: visibleFrame
+            ),
+            .sizeThenPosition
+        )
+    }
+
     func testFrameSettlementWaitsForResizeAndStableSamples() {
         let initial = CGRect(x: -1440, y: 555, width: 960, height: 525)
         let target = CGRect(x: -1920, y: 0, width: 1280, height: 1080)
