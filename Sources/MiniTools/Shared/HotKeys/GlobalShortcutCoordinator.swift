@@ -39,6 +39,7 @@ final class GlobalShortcutCoordinator: ObservableObject {
             let identifier = UInt32(300 + index)
             if descriptor.supportsLongPress {
                 let recognizer = HotKeyLongPressRecognizer(
+                    threshold: .milliseconds(settings.windowLongPressThresholdMilliseconds),
                     onShortPress: { performComposedWindowControl(id, .short) },
                     onLongPress: { performComposedWindowControl(id, .long) }
                 )
@@ -92,6 +93,15 @@ final class GlobalShortcutCoordinator: ObservableObject {
         deactivateLayoutShortcuts()
         settings.updateWindowManagementMode(mode)
         registerActiveLayoutShortcuts()
+        onStateChanged?()
+    }
+
+    func updateWindowLongPressThresholdMilliseconds(_ milliseconds: Int) {
+        settings.updateWindowLongPressThresholdMilliseconds(milliseconds)
+        let threshold: Duration = .milliseconds(settings.windowLongPressThresholdMilliseconds)
+        for recognizer in longPressRecognizers.values {
+            recognizer.updateThreshold(threshold)
+        }
         onStateChanged?()
     }
 

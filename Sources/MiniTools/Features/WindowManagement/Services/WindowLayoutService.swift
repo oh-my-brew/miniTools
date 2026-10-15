@@ -381,38 +381,74 @@ enum WindowLayoutService {
             targetFrame: frame,
             visibleFrame: visibleFrame
         )
-        let resizedFrame: CGRect
         switch mutationOrder {
         case .positionThenSize:
-            let positionedFrame = try correctPositionUntilStable(
+            _ = try positionBeforeResize(
                 initialFrame: initialFrame,
                 targetFrame: frame,
                 window: window,
                 processIdentifier: processIdentifier
             )
-            resizedFrame = try resizeUntilAccepted(
-                initialFrame: positionedFrame,
-                targetFrame: frame,
-                window: window,
-                processIdentifier: processIdentifier
-            )
+            if WindowGeometry.correctedSizeAfterApplyingFrame(
+                actualFrame: initialFrame,
+                targetFrame: frame
+            ) != nil {
+                try setSize(frame.size, of: window)
+            }
         case .sizeThenPosition:
-            resizedFrame = try resizeUntilAccepted(
+            if WindowGeometry.correctedSizeAfterApplyingFrame(
+                actualFrame: initialFrame,
+                targetFrame: frame
+            ) != nil {
+                try setSize(frame.size, of: window)
+            }
+            if WindowGeometry.correctedOriginAfterApplyingFrame(
+                actualFrame: initialFrame,
+                targetFrame: frame
+            ) != nil {
+                try setPosition(frame.origin, of: window)
+            }
+        }
+
+        // Most applications accept the two AX writes immediately. Give
+        // WindowServer a brief chance to publish the result, then return
+        // without entering Safari's slower settlement and retry path.
+        let fastFrame = waitForFastFrameResult(
+            initialFrame: initialFrame,
+            targetFrame: frame,
+            window: window,
+            processIdentifier: processIdentifier
+        )
+        switch WindowGeometry.frameFollowUp(actualFrame: fastFrame, targetFrame: frame) {
+        case .complete:
+            return
+        case .correctPosition:
+            try correctPositionUntilStable(
+                initialFrame: fastFrame,
+                targetFrame: frame,
+                window: window,
+                processIdentifier: processIdentifier
+            )
+        case .settleAndRetrySize:
+            let settledFrame = waitForFrameToSettle(
                 initialFrame: initialFrame,
+                targetFrame: frame,
+                window: window,
+                processIdentifier: processIdentifier
+            ) ?? fastFrame
+            let resizedFrame = try retrySizeUntilAccepted(
+                initialFrame: settledFrame,
+                targetFrame: frame,
+                window: window,
+                processIdentifier: processIdentifier
+            )
+            try correctPositionUntilStable(
+                initialFrame: resizedFrame,
                 targetFrame: frame,
                 window: window,
                 processIdentifier: processIdentifier
             )
         }
-
-        // A delayed resize can still shift the origin, so verify placement at
-        // the end regardless of the selected mutation order.
-        try correctPositionUntilStable(
-            initialFrame: resizedFrame,
-            targetFrame: frame,
-            window: window,
-            processIdentifier: processIdentifier
-        )
     }
 
     private static func setPosition(
@@ -424,6 +460,80 @@ enum WindowLayoutService {
             throw WindowLayoutError.unreadableWindowFrame
         }
         try set(value, attribute: kAXPositionAttribute as CFString, on: window)
+    }
+
+    private static func positionBeforeResize(
+        initialFrame: CGRect,
+        targetFrame: CGRect,
+        window: AXUIElement,
+        processIdentifier: pid_t
+    ) throws -> CGRect {
+        guard WindowGeometry.correctedOriginAfterApplyingFrame(
+            actualFrame: initialFrame,
+            targetFrame: targetFrame
+        ) != nil else {
+            return initialFrame
+        }
+
+        try setPosition(targetFrame.origin, of: window)
+        var latestFrame = initialFrame
+        let deadline = ProcessInfo.processInfo.systemUptime + 0.12
+        repeat {
+            Thread.sleep(forTimeInterval: 0.01)
+            guard let frame = currentFrame(
+                of: window,
+                processIdentifier: processIdentifier
+            ) else {
+                continue
+            }
+            latestFrame = frame
+            if WindowGeometry.correctedOriginAfterApplyingFrame(
+                actualFrame: frame,
+                targetFrame: targetFrame
+            ) == nil {
+                return frame
+            }
+        } while ProcessInfo.processInfo.systemUptime < deadline
+
+        return try correctPositionUntilStable(
+            initialFrame: latestFrame,
+            targetFrame: targetFrame,
+            window: window,
+            processIdentifier: processIdentifier
+        )
+    }
+
+    private static func waitForFastFrameResult(
+        initialFrame: CGRect,
+        targetFrame: CGRect,
+        window: AXUIElement,
+        processIdentifier: pid_t
+    ) -> CGRect {
+        if WindowGeometry.frameFollowUp(
+            actualFrame: initialFrame,
+            targetFrame: targetFrame
+        ) == .complete {
+            return initialFrame
+        }
+        var latestFrame = initialFrame
+        let deadline = ProcessInfo.processInfo.systemUptime + 0.12
+        repeat {
+            Thread.sleep(forTimeInterval: 0.01)
+            guard let frame = currentFrame(
+                of: window,
+                processIdentifier: processIdentifier
+            ) else {
+                continue
+            }
+            latestFrame = frame
+            if WindowGeometry.frameFollowUp(
+                actualFrame: frame,
+                targetFrame: targetFrame
+            ) == .complete {
+                return frame
+            }
+        } while ProcessInfo.processInfo.systemUptime < deadline
+        return latestFrame
     }
 
     private static func waitForFrameToSettle(
@@ -492,34 +602,6 @@ enum WindowLayoutService {
             actualFrame = refreshedFrame
         }
         return actualFrame
-    }
-
-    private static func resizeUntilAccepted(
-        initialFrame: CGRect,
-        targetFrame: CGRect,
-        window: AXUIElement,
-        processIdentifier: pid_t
-    ) throws -> CGRect {
-        guard let correctedSize = WindowGeometry.correctedSizeAfterApplyingFrame(
-            actualFrame: initialFrame,
-            targetFrame: targetFrame
-        ) else {
-            return initialFrame
-        }
-        try setSize(correctedSize, of: window)
-
-        let settledFrame = waitForFrameToSettle(
-            initialFrame: initialFrame,
-            targetFrame: targetFrame,
-            window: window,
-            processIdentifier: processIdentifier
-        ) ?? initialFrame
-        return try retrySizeUntilAccepted(
-            initialFrame: settledFrame,
-            targetFrame: targetFrame,
-            window: window,
-            processIdentifier: processIdentifier
-        )
     }
 
     private static func retrySizeUntilAccepted(

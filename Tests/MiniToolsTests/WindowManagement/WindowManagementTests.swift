@@ -456,6 +456,39 @@ final class WindowManagementTests: XCTestCase {
         )
     }
 
+    func testCompletedFrameSkipsSlowConvergencePath() {
+        let target = CGRect(x: 0, y: 25, width: 1440, height: 875)
+
+        XCTAssertEqual(
+            WindowGeometry.frameFollowUp(actualFrame: target, targetFrame: target),
+            .complete
+        )
+    }
+
+    func testPositionOnlyMismatchUsesPositionCorrection() {
+        let target = CGRect(x: 0, y: 25, width: 1440, height: 875)
+
+        XCTAssertEqual(
+            WindowGeometry.frameFollowUp(
+                actualFrame: CGRect(x: 40, y: 60, width: 1440, height: 875),
+                targetFrame: target
+            ),
+            .correctPosition
+        )
+    }
+
+    func testSizeMismatchUsesSettlementAndRetry() {
+        let target = CGRect(x: 0, y: 25, width: 1440, height: 875)
+
+        XCTAssertEqual(
+            WindowGeometry.frameFollowUp(
+                actualFrame: CGRect(x: 0, y: 25, width: 1200, height: 760),
+                targetFrame: target
+            ),
+            .settleAndRetrySize
+        )
+    }
+
     func testFrameSettlementWaitsForResizeAndStableSamples() {
         let initial = CGRect(x: -1440, y: 555, width: 960, height: 525)
         let target = CGRect(x: -1920, y: 0, width: 1280, height: 1080)

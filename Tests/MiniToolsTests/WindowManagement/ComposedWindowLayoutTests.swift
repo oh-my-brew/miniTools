@@ -255,4 +255,28 @@ final class HotKeyLongPressRecognizerTests: XCTestCase {
 
         XCTAssertEqual(actionCount, 0)
     }
+
+    func testUpdatingThresholdCancelsPendingPressAndUsesNewThreshold() async {
+        var shortPresses = 0
+        var longPresses = 0
+        let longPressTriggered = expectation(description: "updated long press triggered")
+        let recognizer = HotKeyLongPressRecognizer(
+            threshold: .milliseconds(100),
+            onShortPress: { shortPresses += 1 },
+            onLongPress: {
+                longPresses += 1
+                longPressTriggered.fulfill()
+            }
+        )
+
+        recognizer.press()
+        try? await Task.sleep(for: .milliseconds(5))
+        recognizer.updateThreshold(.milliseconds(20))
+        recognizer.press()
+        await fulfillment(of: [longPressTriggered], timeout: 1)
+        recognizer.release()
+
+        XCTAssertEqual(shortPresses, 0)
+        XCTAssertEqual(longPresses, 1)
+    }
 }

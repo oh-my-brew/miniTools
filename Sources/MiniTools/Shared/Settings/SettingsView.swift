@@ -260,6 +260,36 @@ private struct SettingsCategoryDetail: View {
                 }
             }
         } else {
+            Section("长按") {
+                LabeledContent {
+                    HStack(spacing: 10) {
+                        Slider(
+                            value: Binding(
+                                get: {
+                                    Double(settings.windowLongPressThresholdMilliseconds)
+                                },
+                                set: { value in
+                                    shortcutCoordinator
+                                        .updateWindowLongPressThresholdMilliseconds(Int(value))
+                                }
+                            ),
+                            in: Double(HotKeyLongPressRecognizer.minimumThresholdMilliseconds)...Double(HotKeyLongPressRecognizer.maximumThresholdMilliseconds),
+                            step: Double(HotKeyLongPressRecognizer.thresholdStepMilliseconds)
+                        )
+                        .frame(width: 170)
+                        Text("\(settings.windowLongPressThresholdMilliseconds)ms")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 52, alignment: .trailing)
+                    }
+                } label: {
+                    settingsLabel(
+                        title: "长按触发时间",
+                        subtitle: "用于 U、J、K 的长按尺寸动作"
+                    )
+                }
+            }
+
             Section("窗口尺寸") {
                 ForEach(composedWindowDescriptors(ComposedWindowControlCatalog.sizeIDs)) {
                     descriptor in
@@ -285,7 +315,7 @@ private struct SettingsCategoryDetail: View {
             HStack {
                 Text(
                     settings.windowManagementMode == .sizeAndPosition
-                        ? "长按阈值为 400ms。快捷键修改后立即生效；窗口操作需要辅助功能权限。"
+                        ? "长按时间和快捷键修改后立即生效；窗口操作需要辅助功能权限。"
                         : "快捷键修改后立即生效。窗口操作需要辅助功能权限。"
                 )
                 Spacer()
