@@ -79,6 +79,14 @@
 - “登录时启动 miniTools”使用 `SMAppService.mainApp`，属于整个主应用的设置；非“应用程序”目录中的开发构建不得注册或查询正式登录项。
 - 该功能在主应用内运行，不新增特权 helper，也不得停止、卸载或接管其他 DS_Store 服务。
 
+### 默认应用
+
+- 设置中的“默认应用”只覆盖明确列出的保守文本与代码文件类型；每个扩展名必须解析到准确 UTType，不得使用 `public.data`、`public.item` 等宽泛类型。
+- 每项显示当前实际默认应用，并允许逐项设为 Sublime Text。写入使用 `NSWorkspace.setDefaultApplication`，接受 macOS 系统确认；不得通过辅助功能自动确认、直接修改 LaunchServices plist 或调用 `duti`。
+- 每次写入完成后必须重新查询并验证实际默认应用。用户拒绝、系统失败、类型映射失效或 Sublime Text 未安装时，需要在界面显示明确状态。
+- 不提供无法明确目标应用的“恢复默认”操作；若以后增加恢复或应用选择器，操作前必须显示将切换到的具体应用。
+- 自动测试只使用注入的假客户端，不得真实修改本机文件关联，也不得启动可能弹出确认框的应用。
+
 ### 使用统计
 
 - 使用统计只保存在本机，独立于 `AppSettings`；只在动作确认成功后累计。
@@ -97,6 +105,7 @@
 | `Features/MouseBindings` | 侧键事件监听、手势识别、动作配置和拖动路径反馈。 |
 | `Features/ClosedLidRunning` | 合盖运行、电量暂停与恢复、后台服务状态和 XPC 客户端。 |
 | `Features/DSStoreManagement` | 根目录 FSEvents 监控、DS_Store 清理策略、计数和登录启动状态。 |
+| `Features/DefaultApplications` | 文本与代码文件类型目录、UTType 映射、NSWorkspace 默认应用查询/写入和设置 UI。 |
 | `Sources/MiniToolsPowerSupport` | 主应用与 root helper 共用的最小 XPC 协议、签名要求和 `pmset` 解析。 |
 | `Sources/MiniToolsPowerHelper` | 受 `SMAppService` 管理的 root LaunchDaemon，只负责设置和查询合盖运行开关。 |
 | `Shared` | Accessibility、统一 `AppCommand`、全局快捷键、设置持久化、本机使用统计和通用 UI。跨功能抽象应有两个以上实际调用方再放入这里。 |
