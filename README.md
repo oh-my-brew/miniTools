@@ -90,7 +90,8 @@ swift test
 ## 发行与 Homebrew
 
 推送 `vYYYY.MM.DD.N` 标签后，GitHub Actions 会构建 arm64 应用，使用
-Developer ID 签名并提交 Apple 公证，再生成 GitHub Release 和 SHA-256。Homebrew Tap
+Developer ID 签名并提交 Apple 公证，再生成 GitHub Release、SHA-256 和签名 appcast。
+状态菜单中的“检查更新…”可直接安装最新稳定版本，当前不会后台自动检查。Homebrew Tap
 会定期检查 Release，通过 Autobump PR 更新 Cask。签名配置和发版步骤见
 [DISTRIBUTION.md](DISTRIBUTION.md)。
 

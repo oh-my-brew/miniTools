@@ -1,4 +1,4 @@
-# 发行与 Homebrew Cask
+# 产品发行与应用内更新
 
 ## 发布流程
 
@@ -9,6 +9,7 @@
 3. 使用 Developer ID Application、Hardened Runtime 和安全时间戳先签署 helper，再签署应用。
 4. 上传 Apple 公证服务，等待通过并将 ticket staple 到应用。
 5. 校验签名、Gatekeeper 和公证 ticket，再生成最终 ZIP、SHA-256 和 GitHub Release。
+6. 使用 `SPARKLE_ED_PRIVATE_KEY` 为更新包和 appcast 签名，将 `appcast.xml` 上传到同一 Release。
 
 共享发布流程和 Fastlane lanes 来自 `oh-my-infra/apple-ci`；workflow 固定完整
 commit SHA，Fastfile 固定对应的 `v2026.09.12.1` 签名标签。应用发布结果位于
@@ -24,6 +25,7 @@ Release workflow 使用以下 GitHub Actions Secrets：
 - `APPLE_ASC_PRIVATE_KEY_BASE64`
 - `APPLE_MATCH_PASSWORD`
 - `APPLE_MATCH_GIT_PRIVATE_KEY`
+- `SPARKLE_ED_PRIVATE_KEY`
 
 CI 通过只读 Fastlane Match 恢复 Developer ID 身份，不再保存项目级 P12。
 
@@ -31,10 +33,11 @@ Release 包含：
 
 - `miniTools-YYYY.MM.DD.N.zip`
 - `miniTools-YYYY.MM.DD.N.zip.sha256`
+- `appcast.xml`
 
 ## 发布版本
 
-先把 `Support/Info.plist` 中的 `CFBundleShortVersionString` 更新为发布日期，提交并确认
+先把 `Support/Info.plist` 中的 `CFBundleShortVersionString` 更新为完整发行版本，提交并确认
 CI 通过，再创建包含当日发布序号的标签：
 
 ```bash
@@ -42,16 +45,24 @@ git tag -s v2026.08.29.1 -m "miniTools 2026.08.29.1"
 git push origin v2026.08.29.1
 ```
 
-标签必须使用 `vYYYY.MM.DD.N`：日期部分与 Info.plist 中的三段可见版本一致，`N` 从
-`1` 开始，同一天再次发布时依次改为 `2`、`3`。GitHub Release、发布文件和 Homebrew
-Cask 使用完整四段版本；应用内显示三段日期版本。标签必须是签名的 annotated tag，
+标签必须使用 `vYYYY.MM.DD.N`，并与 Info.plist 中的可见版本完全一致；`N` 从
+`1` 开始，同一天再次发布时依次递增。GitHub Release、应用内显示版本、发布文件和 Homebrew
+Cask 均使用完整四段版本。标签必须是签名的 annotated tag，
 其上海时区 tagger 日期也必须与版本日期一致。`CFBundleVersion` 在 GitHub Actions 中
 使用当次 `GITHUB_RUN_NUMBER`，无需每次手动修改。
+
+## 更新渠道
+
+应用状态菜单提供“检查更新…”，通过 Sparkle 读取 GitHub Latest Release 的签名
+`appcast.xml`。当前只允许用户手动检查，不启用后台定时检查或静默更新。更新包和 feed
+都必须通过嵌入应用的 EdDSA 公钥验证。
 
 ## Homebrew Tap
 
 `oh-my-brew/homebrew-tap` 中的 `minitools` Cask 固定下载对应版本的 GitHub Release。
 Tap 的定时 Autobump 工作流发现新版本后，会自动创建更新 Cask 版本和 SHA-256 的 PR。
+产品 Release 不触发该工作流，也不等待 Tap PR 或三机安装；这些由独立的 Homebrew
+维护流程处理。
 
 用户可执行：
 

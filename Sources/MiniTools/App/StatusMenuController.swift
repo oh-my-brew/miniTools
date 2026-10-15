@@ -3,12 +3,14 @@ import AppKit
 @MainActor
 final class StatusMenuController: NSObject, NSMenuDelegate {
     var onOpenPanel: (() -> Void)?
+    var onCheckForUpdates: (() -> Void)?
     var onOpenSettings: (() -> Void)?
     var onToggleClosedLidRunning: (() -> Void)?
     var onMenuWillOpen: (() -> Void)?
 
     static let toolPanelTitle = "工具面板"
     static let closedLidRunningTitle = "合盖运行"
+    static let checkForUpdatesTitle = "检查更新…"
 
     private var statusItem: NSStatusItem?
     private var panelItem: NSMenuItem?
@@ -42,6 +44,15 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         self.closedLidRunningItem = closedLidRunningItem
 
         menu.addItem(.separator())
+
+        let checkForUpdatesItem = NSMenuItem(
+            title: Self.checkForUpdatesTitle,
+            action: #selector(checkForUpdates),
+            keyEquivalent: ""
+        )
+        checkForUpdatesItem.target = self
+        checkForUpdatesItem.image = menuIcon(systemName: "arrow.triangle.2.circlepath")
+        menu.addItem(checkForUpdatesItem)
 
         let settingsItem = NSMenuItem(
             title: "设置…",
@@ -105,6 +116,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     @objc private func openSettings() {
         onOpenSettings?()
+    }
+
+    @objc private func checkForUpdates() {
+        onCheckForUpdates?()
     }
 
     @objc private func toggleClosedLidRunning() {

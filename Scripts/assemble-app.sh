@@ -6,6 +6,7 @@ APP_NAME="miniTools"
 EXECUTABLE_NAME="MiniTools"
 EXECUTABLE_PATH="${1:?Usage: assemble-app.sh <executable-path> [app-path]}"
 HELPER_EXECUTABLE_PATH="${MINITOOLS_POWER_HELPER_PATH:?Set MINITOOLS_POWER_HELPER_PATH.}"
+SPARKLE_FRAMEWORK_PATH="${MINITOOLS_SPARKLE_FRAMEWORK_PATH:?Set MINITOOLS_SPARKLE_FRAMEWORK_PATH.}"
 APP_DIR="${2:-"$ROOT/dist/$APP_NAME.app"}"
 CONTENTS_DIR="$APP_DIR/Contents"
 SIGN_IDENTITY="${CODE_SIGN_IDENTITY:?Set CODE_SIGN_IDENTITY to a code-signing identity.}"
@@ -20,14 +21,22 @@ if [[ ! -f "$HELPER_EXECUTABLE_PATH" ]]; then
     echo "Power helper executable not found: $HELPER_EXECUTABLE_PATH" >&2
     exit 1
 fi
+if [[ ! -d "$SPARKLE_FRAMEWORK_PATH" ]]; then
+    echo "Sparkle framework not found: $SPARKLE_FRAMEWORK_PATH" >&2
+    exit 1
+fi
 
 rm -rf "$APP_DIR"
 mkdir -p \
     "$CONTENTS_DIR/MacOS" \
+    "$CONTENTS_DIR/Frameworks" \
     "$CONTENTS_DIR/Resources" \
     "$CONTENTS_DIR/Library/LaunchDaemons"
 cp "$EXECUTABLE_PATH" "$CONTENTS_DIR/MacOS/$EXECUTABLE_NAME"
 cp "$HELPER_EXECUTABLE_PATH" "$CONTENTS_DIR/MacOS/MiniToolsPowerHelper"
+ditto "$SPARKLE_FRAMEWORK_PATH" "$CONTENTS_DIR/Frameworks/Sparkle.framework"
+install_name_tool -add_rpath "@executable_path/../Frameworks" \
+    "$CONTENTS_DIR/MacOS/$EXECUTABLE_NAME"
 cp "$ROOT/Support/com.omzcj.minitools.power-helper.plist" \
     "$CONTENTS_DIR/Library/LaunchDaemons/com.omzcj.minitools.power-helper.plist"
 cp "$ROOT/Support/Info.plist" "$CONTENTS_DIR/Info.plist"
@@ -53,8 +62,11 @@ fi
 codesign "${SIGN_ARGUMENTS[@]}" \
     --identifier "com.omzcj.minitools.power-helper" \
     "$CONTENTS_DIR/MacOS/MiniToolsPowerHelper"
+codesign "${SIGN_ARGUMENTS[@]}" --deep \
+    "$CONTENTS_DIR/Frameworks/Sparkle.framework"
 codesign "${SIGN_ARGUMENTS[@]}" "$APP_DIR"
 codesign --verify --strict "$CONTENTS_DIR/MacOS/MiniToolsPowerHelper"
+codesign --verify --deep --strict "$CONTENTS_DIR/Frameworks/Sparkle.framework"
 codesign --verify --strict "$APP_DIR"
 
 DESIGNATED_REQUIREMENT="$(codesign -d -r- "$APP_DIR" 2>&1)"
