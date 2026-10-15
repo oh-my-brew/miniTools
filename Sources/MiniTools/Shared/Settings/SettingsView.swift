@@ -217,13 +217,17 @@ private struct SettingsCategoryDetail: View {
             Picker(
                 "窗口布局方案",
                 selection: Binding(
-                    get: { settings.windowManagementMode },
-                    set: shortcutCoordinator.updateWindowManagementMode
+                    get: { settings.windowManagementMode.rawValue },
+                    set: { rawValue in
+                        guard let mode = WindowManagementMode(rawValue: rawValue) else { return }
+                        shortcutCoordinator.updateWindowManagementMode(mode)
+                    }
                 )
             ) {
-                ForEach(WindowManagementMode.allCases) { mode in
-                    Text(mode.title).tag(mode)
-                }
+                Text(WindowManagementMode.classic.title)
+                    .tag(WindowManagementMode.classic.rawValue)
+                Text(WindowManagementMode.sizeAndPosition.title)
+                    .tag(WindowManagementMode.sizeAndPosition.rawValue)
             }
             .pickerStyle(.segmented)
             .frame(width: 320)
