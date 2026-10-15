@@ -19,33 +19,50 @@ private let miniToolsHotKeyHandler: EventHandlerUPP = { _, event, userData in
     guard result == noErr else { return result }
     guard receivedID.id == manager.identifier else { return OSStatus(eventNotHandledErr) }
 
+    let eventKind = GetEventKind(event)
     DispatchQueue.main.async {
-        manager.onPressed()
+        if eventKind == UInt32(kEventHotKeyReleased) {
+            manager.onReleased?()
+        } else {
+            manager.onPressed()
+        }
     }
     return noErr
 }
 
 final class GlobalHotKey: @unchecked Sendable {
     var onPressed: () -> Void
+    var onReleased: (() -> Void)?
     fileprivate let identifier: UInt32
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandlerRef: EventHandlerRef?
     private var registeredShortcut: KeyboardShortcut?
     private var handlerInstallationStatus: OSStatus = noErr
 
-    init(identifier: UInt32, onPressed: @escaping () -> Void) {
+    init(
+        identifier: UInt32,
+        onPressed: @escaping () -> Void,
+        onReleased: (() -> Void)? = nil
+    ) {
         self.identifier = identifier
         self.onPressed = onPressed
+        self.onReleased = onReleased
 
-        var eventType = EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard),
-            eventKind: UInt32(kEventHotKeyPressed)
-        )
+        var eventTypes = [
+            EventTypeSpec(
+                eventClass: OSType(kEventClassKeyboard),
+                eventKind: UInt32(kEventHotKeyPressed)
+            ),
+            EventTypeSpec(
+                eventClass: OSType(kEventClassKeyboard),
+                eventKind: UInt32(kEventHotKeyReleased)
+            )
+        ]
         handlerInstallationStatus = InstallEventHandler(
             GetApplicationEventTarget(),
             miniToolsHotKeyHandler,
-            1,
-            &eventType,
+            eventTypes.count,
+            &eventTypes,
             Unmanaged.passUnretained(self).toOpaque(),
             &eventHandlerRef
         )

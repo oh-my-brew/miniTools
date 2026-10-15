@@ -6,6 +6,8 @@ final class AppSettings: ObservableObject {
         static let panelShortcut = "panelShortcut"
         static let lastFeaturePanel = "lastFeaturePanel"
         static let windowControlShortcuts = "windowControlShortcuts"
+        static let windowManagementMode = "windowManagementMode"
+        static let composedWindowControlShortcuts = "composedWindowControlShortcuts"
         static let compressionQuality = "compressionQuality"
         static let cursorHighlightStyles = "cursorHighlightStyles"
         static let mouseBindings = "mouseBindings"
@@ -26,6 +28,10 @@ final class AppSettings: ObservableObject {
     @Published private(set) var panelShortcut: KeyboardShortcut
     @Published private(set) var lastFeaturePanel: FeaturePanelKind
     @Published private(set) var windowControlShortcuts: [WindowControlID: KeyboardShortcut]
+    @Published private(set) var windowManagementMode: WindowManagementMode
+    @Published private(set) var composedWindowControlShortcuts: [
+        ComposedWindowControlID: KeyboardShortcut
+    ]
     @Published private(set) var cursorHighlightStyles: Set<CursorHighlightStyle>
     @Published private(set) var mouseBindings: [MouseBindingKey: AppCommand]
     @Published private(set) var mouseDragThresholdRatio: Double
@@ -46,6 +52,11 @@ final class AppSettings: ObservableObject {
         lastFeaturePanel = defaults.string(forKey: Keys.lastFeaturePanel)
             .flatMap(FeaturePanelKind.init(rawValue:)) ?? .encodingConversion
         windowControlShortcuts = Self.loadWindowControlShortcuts(defaults: defaults)
+        windowManagementMode = defaults.string(forKey: Keys.windowManagementMode)
+            .flatMap(WindowManagementMode.init(rawValue:)) ?? .classic
+        composedWindowControlShortcuts = Self.loadComposedWindowControlShortcuts(
+            defaults: defaults
+        )
         var loadedCursorHighlightStyles = Self.loadCursorHighlightStyles(defaults: defaults)
         if !defaults.bool(forKey: Keys.restoredHikariCursorStyle) {
             loadedCursorHighlightStyles.insert(.mangekyoHikari)
@@ -84,6 +95,28 @@ final class AppSettings: ObservableObject {
 
     func windowControlShortcut(for id: WindowControlID) -> KeyboardShortcut {
         windowControlShortcuts[id] ?? WindowControlCatalog.defaultShortcuts[id] ?? .panelDefault
+    }
+
+    func updateWindowManagementMode(_ mode: WindowManagementMode) {
+        guard mode != windowManagementMode else { return }
+        windowManagementMode = mode
+        defaults.set(mode.rawValue, forKey: Keys.windowManagementMode)
+    }
+
+    func updateComposedWindowControlShortcut(
+        _ shortcut: KeyboardShortcut,
+        for id: ComposedWindowControlID
+    ) {
+        composedWindowControlShortcuts[id] = shortcut
+        saveComposedWindowControlShortcuts()
+    }
+
+    func composedWindowControlShortcut(
+        for id: ComposedWindowControlID
+    ) -> KeyboardShortcut {
+        composedWindowControlShortcuts[id]
+            ?? ComposedWindowControlCatalog.defaultShortcuts[id]
+            ?? .panelDefault
     }
 
     func isCursorHighlightStyleEnabled(_ style: CursorHighlightStyle) -> Bool {
@@ -164,6 +197,16 @@ final class AppSettings: ObservableObject {
         defaults.set(data, forKey: Keys.windowControlShortcuts)
     }
 
+    private func saveComposedWindowControlShortcuts() {
+        let encoded = Dictionary(
+            uniqueKeysWithValues: composedWindowControlShortcuts.map {
+                ($0.key.rawValue, $0.value)
+            }
+        )
+        guard let data = try? JSONEncoder().encode(encoded) else { return }
+        defaults.set(data, forKey: Keys.composedWindowControlShortcuts)
+    }
+
     private static func loadPanelShortcut(defaults: UserDefaults) -> KeyboardShortcut {
         if let shortcut = decodeShortcut(defaults.data(forKey: Keys.panelShortcut)) {
             if shortcut == .previousPanelDefault {
@@ -226,6 +269,23 @@ final class AppSettings: ObservableObject {
         }
         for (rawID, shortcut) in stored {
             guard let id = WindowControlID(rawValue: rawID) else { continue }
+            shortcuts[id] = shortcut
+        }
+        return shortcuts
+    }
+
+    private static func loadComposedWindowControlShortcuts(
+        defaults: UserDefaults
+    ) -> [ComposedWindowControlID: KeyboardShortcut] {
+        var shortcuts = ComposedWindowControlCatalog.defaultShortcuts
+        guard
+            let data = defaults.data(forKey: Keys.composedWindowControlShortcuts),
+            let stored = try? JSONDecoder().decode([String: KeyboardShortcut].self, from: data)
+        else {
+            return shortcuts
+        }
+        for (rawID, shortcut) in stored {
+            guard let id = ComposedWindowControlID(rawValue: rawID) else { continue }
             shortcuts[id] = shortcut
         }
         return shortcuts

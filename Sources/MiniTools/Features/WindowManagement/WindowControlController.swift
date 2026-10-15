@@ -37,6 +37,27 @@ final class WindowControlController {
         }
     }
 
+    func performComposed(
+        _ id: ComposedWindowControlID,
+        press: WindowShortcutPress
+    ) {
+        if let target = ComposedWindowControlCatalog.sizeTarget(for: id, press: press) {
+            performComposedWindowAction {
+                try await WindowLayoutService.applyComposedSize(target)
+                return (target.statisticsID, target.title)
+            }
+            return
+        }
+
+        guard let placement = ComposedWindowControlCatalog.placement(for: id) else { return }
+        performComposedWindowAction {
+            guard let outcome = try await WindowLayoutService.applyComposedPlacement(placement) else {
+                return nil
+            }
+            return (outcome.statisticsID, outcome.title)
+        }
+    }
+
     private func movePointerToNextScreen(
         cursorHighlightStyles: Set<CursorHighlightStyle>
     ) {
@@ -75,6 +96,23 @@ final class WindowControlController {
                         for: id,
                         candidateIndex: outcome.candidateIndex
                     ),
+                    title: title,
+                    category: .windowManagement
+                )
+            } catch {
+                self?.report(error)
+            }
+        }
+    }
+
+    private func performComposedWindowAction(
+        _ action: @escaping () async throws -> (String, String)?
+    ) {
+        Task { [weak self] in
+            do {
+                guard let (id, title) = try await action(), let self else { return }
+                usageStatistics.record(
+                    id: "composed.\(id)",
                     title: title,
                     category: .windowManagement
                 )

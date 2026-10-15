@@ -213,21 +213,65 @@ private struct SettingsCategoryDetail: View {
 
     @ViewBuilder
     private var windowManagementSettings: some View {
-        Section("四角") {
-            ForEach(windowDescriptors([.upperLeft, .upperRight, .lowerLeft, .lowerRight])) { descriptor in
-                windowControlRow(descriptor)
+        Section {
+            Picker(
+                "窗口布局方案",
+                selection: Binding(
+                    get: { settings.windowManagementMode.rawValue },
+                    set: { rawValue in
+                        guard let mode = WindowManagementMode(rawValue: rawValue) else { return }
+                        shortcutCoordinator.updateWindowManagementMode(mode)
+                    }
+                )
+            ) {
+                Text(WindowManagementMode.classic.title)
+                    .tag(WindowManagementMode.classic.rawValue)
+                Text(WindowManagementMode.sizeAndPosition.title)
+                    .tag(WindowManagementMode.sizeAndPosition.rawValue)
             }
+            .pickerStyle(.segmented)
+            .frame(width: 320)
+        } header: {
+            Text("布局方案")
+        } footer: {
+            Text("经典布局按区域直接调整；尺寸与位置方案先选择窗口大小，再用 H、L 或 Return 定位。")
         }
 
-        Section("边缘与尺寸") {
-            ForEach(windowDescriptors([.left, .right, .horizontalHalves, .verticalThirds])) { descriptor in
-                windowControlRow(descriptor)
+        if settings.windowManagementMode == .classic {
+            Section("四角") {
+                ForEach(
+                    windowDescriptors([.upperLeft, .upperRight, .lowerLeft, .lowerRight])
+                ) { descriptor in
+                    windowControlRow(descriptor)
+                }
             }
-        }
 
-        Section("其他") {
-            ForEach(windowDescriptors([.maximize, .centerWindow])) { descriptor in
-                windowControlRow(descriptor)
+            Section("边缘与尺寸") {
+                ForEach(
+                    windowDescriptors([.left, .right, .horizontalHalves, .verticalThirds])
+                ) { descriptor in
+                    windowControlRow(descriptor)
+                }
+            }
+
+            Section("其他") {
+                ForEach(windowDescriptors([.maximize, .centerWindow])) { descriptor in
+                    windowControlRow(descriptor)
+                }
+            }
+        } else {
+            Section("窗口尺寸") {
+                ForEach(composedWindowDescriptors(ComposedWindowControlCatalog.sizeIDs)) {
+                    descriptor in
+                    composedWindowControlRow(descriptor)
+                }
+            }
+
+            Section("窗口位置") {
+                ForEach(composedWindowDescriptors(ComposedWindowControlCatalog.placementIDs)) {
+                    descriptor in
+                    composedWindowControlRow(descriptor)
+                }
             }
         }
 
@@ -239,7 +283,11 @@ private struct SettingsCategoryDetail: View {
             Text("跨屏操作")
         } footer: {
             HStack {
-                Text("快捷键修改后立即生效。窗口操作需要辅助功能权限。")
+                Text(
+                    settings.windowManagementMode == .sizeAndPosition
+                        ? "长按阈值为 400ms。快捷键修改后立即生效；窗口操作需要辅助功能权限。"
+                        : "快捷键修改后立即生效。窗口操作需要辅助功能权限。"
+                )
                 Spacer()
                 Button("恢复默认快捷键") {
                     shortcutCoordinator.restoreDefaultWindowControlShortcuts()
@@ -445,6 +493,12 @@ private struct SettingsCategoryDetail: View {
         }
     }
 
+    private func composedWindowDescriptors(
+        _ ids: [ComposedWindowControlID]
+    ) -> [ComposedWindowControlDescriptor] {
+        ids.compactMap { ComposedWindowControlCatalog.descriptor(for: $0) }
+    }
+
     private func shortcutRow(
         title: String,
         subtitle: String,
@@ -484,6 +538,29 @@ private struct SettingsCategoryDetail: View {
                 title: descriptor.title,
                 subtitle: descriptor.subtitle,
                 error: shortcutCoordinator.windowControlErrors[descriptor.id]
+            )
+        }
+    }
+
+    private func composedWindowControlRow(
+        _ descriptor: ComposedWindowControlDescriptor
+    ) -> some View {
+        LabeledContent {
+            ShortcutRecorderView(
+                shortcut: settings.composedWindowControlShortcut(for: descriptor.id),
+                onChange: { shortcut in
+                    shortcutCoordinator.updateComposedWindowControlShortcut(
+                        shortcut,
+                        for: descriptor.id
+                    )
+                }
+            )
+            .frame(width: 190, height: 28)
+        } label: {
+            settingsLabel(
+                title: descriptor.title,
+                subtitle: descriptor.subtitle,
+                error: shortcutCoordinator.composedWindowControlErrors[descriptor.id]
             )
         }
     }
