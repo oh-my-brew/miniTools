@@ -8,6 +8,7 @@ final class AppSettings: ObservableObject {
         static let windowControlShortcuts = "windowControlShortcuts"
         static let windowManagementMode = "windowManagementMode"
         static let composedWindowControlShortcuts = "composedWindowControlShortcuts"
+        static let windowLongPressThresholdMilliseconds = "windowLongPressThresholdMilliseconds"
         static let compressionQuality = "compressionQuality"
         static let cursorHighlightStyles = "cursorHighlightStyles"
         static let mouseBindings = "mouseBindings"
@@ -32,6 +33,7 @@ final class AppSettings: ObservableObject {
     @Published private(set) var composedWindowControlShortcuts: [
         ComposedWindowControlID: KeyboardShortcut
     ]
+    @Published private(set) var windowLongPressThresholdMilliseconds: Int
     @Published private(set) var cursorHighlightStyles: Set<CursorHighlightStyle>
     @Published private(set) var mouseBindings: [MouseBindingKey: AppCommand]
     @Published private(set) var mouseDragThresholdRatio: Double
@@ -55,6 +57,9 @@ final class AppSettings: ObservableObject {
         windowManagementMode = defaults.string(forKey: Keys.windowManagementMode)
             .flatMap(WindowManagementMode.init(rawValue:)) ?? .classic
         composedWindowControlShortcuts = Self.loadComposedWindowControlShortcuts(
+            defaults: defaults
+        )
+        windowLongPressThresholdMilliseconds = Self.loadWindowLongPressThresholdMilliseconds(
             defaults: defaults
         )
         var loadedCursorHighlightStyles = Self.loadCursorHighlightStyles(defaults: defaults)
@@ -117,6 +122,13 @@ final class AppSettings: ObservableObject {
         composedWindowControlShortcuts[id]
             ?? ComposedWindowControlCatalog.defaultShortcuts[id]
             ?? .panelDefault
+    }
+
+    func updateWindowLongPressThresholdMilliseconds(_ milliseconds: Int) {
+        let normalized = HotKeyLongPressRecognizer.normalizedThresholdMilliseconds(milliseconds)
+        guard normalized != windowLongPressThresholdMilliseconds else { return }
+        windowLongPressThresholdMilliseconds = normalized
+        defaults.set(normalized, forKey: Keys.windowLongPressThresholdMilliseconds)
     }
 
     func isCursorHighlightStyleEnabled(_ style: CursorHighlightStyle) -> Bool {
@@ -358,6 +370,17 @@ final class AppSettings: ObservableObject {
         defaults.set(migrated, forKey: Keys.mouseDragThresholdRatio)
         defaults.removeObject(forKey: Keys.legacyMouseDragThreshold)
         return migrated
+    }
+
+    private static func loadWindowLongPressThresholdMilliseconds(
+        defaults: UserDefaults
+    ) -> Int {
+        guard defaults.object(forKey: Keys.windowLongPressThresholdMilliseconds) != nil else {
+            return HotKeyLongPressRecognizer.defaultThresholdMilliseconds
+        }
+        return HotKeyLongPressRecognizer.normalizedThresholdMilliseconds(
+            defaults.integer(forKey: Keys.windowLongPressThresholdMilliseconds)
+        )
     }
 
     private static func decodeShortcut(_ data: Data?) -> KeyboardShortcut? {

@@ -144,6 +144,35 @@ final class AppSettingsTests: XCTestCase {
     }
 
     @MainActor
+    func testWindowLongPressThresholdDefaultsTo200MillisecondsAndPersists() throws {
+        let (defaults, suiteName) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults)
+
+        XCTAssertEqual(settings.windowLongPressThresholdMilliseconds, 200)
+
+        settings.updateWindowLongPressThresholdMilliseconds(275)
+
+        XCTAssertEqual(
+            AppSettings(defaults: defaults).windowLongPressThresholdMilliseconds,
+            275
+        )
+    }
+
+    @MainActor
+    func testWindowLongPressThresholdStaysWithinSupportedRange() throws {
+        let (defaults, suiteName) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults)
+
+        settings.updateWindowLongPressThresholdMilliseconds(50)
+        XCTAssertEqual(settings.windowLongPressThresholdMilliseconds, 100)
+
+        settings.updateWindowLongPressThresholdMilliseconds(900)
+        XCTAssertEqual(settings.windowLongPressThresholdMilliseconds, 600)
+    }
+
+    @MainActor
     func testPersistsComposedWindowControlShortcutSeparately() throws {
         let (defaults, suiteName) = try makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }

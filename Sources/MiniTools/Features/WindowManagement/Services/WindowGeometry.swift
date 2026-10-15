@@ -19,6 +19,12 @@ enum WindowFrameMutationOrder: Equatable, Sendable {
     case sizeThenPosition
 }
 
+enum WindowFrameFollowUp: Equatable, Sendable {
+    case complete
+    case correctPosition
+    case settleAndRetrySize
+}
+
 struct WindowFrameSettlementTracker {
     private let initialSize: CGSize
     private let tolerance: CGFloat
@@ -100,6 +106,25 @@ struct WindowFrameSettlementTracker {
 }
 
 enum WindowGeometry {
+    static func frameFollowUp(
+        actualFrame: CGRect,
+        targetFrame: CGRect
+    ) -> WindowFrameFollowUp {
+        if correctedSizeAfterApplyingFrame(
+            actualFrame: actualFrame,
+            targetFrame: targetFrame
+        ) != nil {
+            return .settleAndRetrySize
+        }
+        if correctedOriginAfterApplyingFrame(
+            actualFrame: actualFrame,
+            targetFrame: targetFrame
+        ) != nil {
+            return .correctPosition
+        }
+        return .complete
+    }
+
     static func frameMutationOrder(
         currentFrame: CGRect,
         targetFrame: CGRect,

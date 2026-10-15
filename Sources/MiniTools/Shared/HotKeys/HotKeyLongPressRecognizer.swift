@@ -2,9 +2,13 @@ import Foundation
 
 @MainActor
 final class HotKeyLongPressRecognizer {
-    static let defaultThreshold: Duration = .milliseconds(400)
+    static let defaultThresholdMilliseconds = 200
+    static let minimumThresholdMilliseconds = 100
+    static let maximumThresholdMilliseconds = 600
+    static let thresholdStepMilliseconds = 25
+    static let defaultThreshold: Duration = .milliseconds(defaultThresholdMilliseconds)
 
-    private let threshold: Duration
+    private var threshold: Duration
     private let onShortPress: () -> Void
     private let onLongPress: () -> Void
     private var holdTask: Task<Void, Never>?
@@ -19,6 +23,15 @@ final class HotKeyLongPressRecognizer {
         self.threshold = threshold
         self.onShortPress = onShortPress
         self.onLongPress = onLongPress
+    }
+
+    static func normalizedThresholdMilliseconds(_ value: Int) -> Int {
+        min(max(value, minimumThresholdMilliseconds), maximumThresholdMilliseconds)
+    }
+
+    func updateThreshold(_ threshold: Duration) {
+        cancel()
+        self.threshold = threshold
     }
 
     func press() {
