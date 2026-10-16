@@ -45,6 +45,13 @@ cp "$ROOT/Support/Assets/SmartisanStatusIcon.png" \
     "$CONTENTS_DIR/Resources/SmartisanStatusIcon.png"
 cp "$ROOT/THIRD_PARTY_NOTICES.md" "$CONTENTS_DIR/Resources/THIRD_PARTY_NOTICES.md"
 
+REQUIRE_SIGNED_FEED="$(/usr/libexec/PlistBuddy -c "Print :SURequireSignedFeed" "$CONTENTS_DIR/Info.plist")"
+VERIFY_BEFORE_EXTRACTION="$(/usr/libexec/PlistBuddy -c "Print :SUVerifyUpdateBeforeExtraction" "$CONTENTS_DIR/Info.plist")"
+if [[ "$REQUIRE_SIGNED_FEED" == "true" && "$VERIFY_BEFORE_EXTRACTION" != "true" ]]; then
+    echo "Sparkle signed feeds require SUVerifyUpdateBeforeExtraction=true." >&2
+    exit 1
+fi
+
 /usr/libexec/PlistBuddy \
     -c "Set :CFBundleShortVersionString $APP_VERSION" \
     "$CONTENTS_DIR/Info.plist"
