@@ -4,6 +4,9 @@ import Foundation
 final class AppSettings: ObservableObject {
     private enum Keys {
         static let panelShortcut = "panelShortcut"
+        static let clipboardHistoryShortcut = "clipboardHistoryShortcut"
+        static let clipboardHistoryEnabled = "clipboardHistoryEnabled"
+        static let clipboardHistoryRetention = "clipboardHistoryRetention"
         static let lastFeaturePanel = "lastFeaturePanel"
         static let windowControlShortcuts = "windowControlShortcuts"
         static let windowManagementMode = "windowManagementMode"
@@ -28,6 +31,9 @@ final class AppSettings: ObservableObject {
     }
 
     @Published private(set) var panelShortcut: KeyboardShortcut
+    @Published private(set) var clipboardHistoryShortcut: KeyboardShortcut
+    @Published private(set) var clipboardHistoryEnabled: Bool
+    @Published private(set) var clipboardHistoryRetention: ClipboardHistoryRetention
     @Published private(set) var lastFeaturePanel: FeaturePanelKind
     @Published private(set) var windowControlShortcuts: [WindowControlID: KeyboardShortcut]
     @Published private(set) var windowManagementMode: WindowManagementMode
@@ -53,6 +59,14 @@ final class AppSettings: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         panelShortcut = Self.loadPanelShortcut(defaults: defaults)
+        clipboardHistoryShortcut = Self.decodeShortcut(
+            defaults.data(forKey: Keys.clipboardHistoryShortcut)
+        ) ?? .clipboardHistoryDefault
+        clipboardHistoryEnabled = defaults.object(forKey: Keys.clipboardHistoryEnabled) == nil
+            ? true
+            : defaults.bool(forKey: Keys.clipboardHistoryEnabled)
+        clipboardHistoryRetention = defaults.string(forKey: Keys.clipboardHistoryRetention)
+            .flatMap(ClipboardHistoryRetention.init(rawValue:)) ?? .defaultValue
         lastFeaturePanel = defaults.string(forKey: Keys.lastFeaturePanel)
             .flatMap(FeaturePanelKind.init(rawValue:)) ?? .encodingConversion
         windowControlShortcuts = Self.loadWindowControlShortcuts(defaults: defaults)
@@ -90,6 +104,23 @@ final class AppSettings: ObservableObject {
     func updatePanelShortcut(_ shortcut: KeyboardShortcut) {
         panelShortcut = shortcut
         Self.persist(shortcut, key: Keys.panelShortcut, defaults: defaults)
+    }
+
+    func updateClipboardHistoryShortcut(_ shortcut: KeyboardShortcut) {
+        clipboardHistoryShortcut = shortcut
+        Self.persist(shortcut, key: Keys.clipboardHistoryShortcut, defaults: defaults)
+    }
+
+    func updateClipboardHistoryEnabled(_ enabled: Bool) {
+        guard enabled != clipboardHistoryEnabled else { return }
+        clipboardHistoryEnabled = enabled
+        defaults.set(enabled, forKey: Keys.clipboardHistoryEnabled)
+    }
+
+    func updateClipboardHistoryRetention(_ retention: ClipboardHistoryRetention) {
+        guard retention != clipboardHistoryRetention else { return }
+        clipboardHistoryRetention = retention
+        defaults.set(retention.rawValue, forKey: Keys.clipboardHistoryRetention)
     }
 
     func updateLastFeaturePanel(_ panel: FeaturePanelKind) {

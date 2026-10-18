@@ -19,6 +19,7 @@ final class AppController: NSObject {
         settings: settings
     )
     private let featurePanelController: FeaturePanelController
+    private let clipboardHistoryController: ClipboardHistoryPanelController
     private lazy var commandDispatcher = AppCommandDispatcher(
         settings: settings,
         featurePanelController: featurePanelController,
@@ -36,6 +37,9 @@ final class AppController: NSObject {
             settings: applicationContext.settings,
             usageStatistics: applicationContext.usageStatistics
         )
+        clipboardHistoryController = ClipboardHistoryPanelController(
+            settings: applicationContext.settings
+        )
         super.init()
     }
 
@@ -43,7 +47,12 @@ final class AppController: NSObject {
         shortcutCoordinator = GlobalShortcutCoordinator(
             settings: settings,
             showPanel: { [weak self] in
+                self?.clipboardHistoryController.close(restoreFocus: false)
                 self?.commandDispatcher.perform(.toggleLastFeaturePanel)
+            },
+            showClipboardHistory: { [weak self] in
+                self?.featurePanelController.close(restoreFocus: false)
+                self?.clipboardHistoryController.toggle()
             },
             performWindowControl: { [weak self] id in
                 self?.commandDispatcher.perform(.windowControl(id))
@@ -71,6 +80,7 @@ final class AppController: NSObject {
             rustDeskXHeatProtectionController: rustDeskXHeatProtectionController
         )
         applicationContext.install(dsStoreManagementController: dsStoreManagementController)
+        applicationContext.install(clipboardHistoryController: clipboardHistoryController)
 
         settingsWindowController = SettingsWindowController(
             settings: settings,
@@ -79,14 +89,23 @@ final class AppController: NSObject {
             closedLidRunningController: closedLidRunningController,
             rustDeskXHeatProtectionController: rustDeskXHeatProtectionController,
             dsStoreManagementController: dsStoreManagementController,
+            clipboardHistoryController: clipboardHistoryController,
             usageStatistics: applicationContext.usageStatistics
         )
         featurePanelController.onOpenSettings = { [weak self] in
             self?.showSettings()
         }
+        clipboardHistoryController.onOpenSettings = { [weak self] in
+            self?.showSettings()
+        }
 
         statusMenuController.onOpenPanel = { [weak self] in
+            self?.clipboardHistoryController.close(restoreFocus: false)
             self?.featurePanelController.toggleLastUsedPanel()
+        }
+        statusMenuController.onOpenClipboardHistory = { [weak self] in
+            self?.featurePanelController.close(restoreFocus: false)
+            self?.clipboardHistoryController.toggle()
         }
         statusMenuController.onOpenSettings = { [weak self] in
             self?.showSettings()
@@ -110,6 +129,7 @@ final class AppController: NSObject {
         closedLidRunningController.start()
         rustDeskXHeatProtectionController.start()
         dsStoreManagementController.start()
+        clipboardHistoryController.start()
         shortcutCoordinator.start()
         mouseBindingCoordinator.start()
         updateStatusMenu()
@@ -126,6 +146,7 @@ final class AppController: NSObject {
 
     @objc func showSettings() {
         featurePanelController.close(restoreFocus: false)
+        clipboardHistoryController.close(restoreFocus: false)
         settingsWindowController?.show()
     }
 
@@ -137,6 +158,7 @@ final class AppController: NSObject {
         closedLidRunningController.stop()
         rustDeskXHeatProtectionController.stop()
         dsStoreManagementController.stop()
+        clipboardHistoryController.stop()
         featurePanelController.stop()
     }
 

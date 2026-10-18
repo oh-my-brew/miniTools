@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 final class GlobalShortcutCoordinator: ObservableObject {
     @Published private(set) var panelError: String?
+    @Published private(set) var clipboardHistoryError: String?
     @Published private(set) var windowControlErrors: [WindowControlID: String] = [:]
     @Published private(set) var composedWindowControlErrors: [ComposedWindowControlID: String] = [:]
 
@@ -11,6 +12,7 @@ final class GlobalShortcutCoordinator: ObservableObject {
 
     private let settings: AppSettings
     private let panelHotKey: GlobalHotKey
+    private let clipboardHistoryHotKey: GlobalHotKey
     private var windowControlHotKeys: [WindowControlID: GlobalHotKey] = [:]
     private var composedWindowControlHotKeys: [ComposedWindowControlID: GlobalHotKey] = [:]
     private var longPressRecognizers: [ComposedWindowControlID: HotKeyLongPressRecognizer] = [:]
@@ -18,6 +20,7 @@ final class GlobalShortcutCoordinator: ObservableObject {
     init(
         settings: AppSettings,
         showPanel: @escaping () -> Void,
+        showClipboardHistory: @escaping () -> Void,
         performWindowControl: @escaping (WindowControlID) -> Void,
         performComposedWindowControl: @escaping (
             ComposedWindowControlID,
@@ -26,6 +29,7 @@ final class GlobalShortcutCoordinator: ObservableObject {
     ) {
         self.settings = settings
         panelHotKey = GlobalHotKey(identifier: 1, onPressed: showPanel)
+        clipboardHistoryHotKey = GlobalHotKey(identifier: 2, onPressed: showClipboardHistory)
 
         for (index, descriptor) in WindowControlCatalog.descriptors.enumerated() {
             let id = descriptor.id
@@ -59,6 +63,7 @@ final class GlobalShortcutCoordinator: ObservableObject {
 
     func start() {
         registerInitialPanelShortcut()
+        registerInitialClipboardHistoryShortcut()
         registerCrossScreenShortcuts()
         registerActiveLayoutShortcuts()
         onStateChanged?()
@@ -67,6 +72,7 @@ final class GlobalShortcutCoordinator: ObservableObject {
     func stop() {
         cancelLongPresses()
         panelHotKey.unregister()
+        clipboardHistoryHotKey.unregister()
         for hotKey in windowControlHotKeys.values {
             hotKey.unregister()
         }
@@ -84,6 +90,19 @@ final class GlobalShortcutCoordinator: ObservableObject {
         }
         panelError = nil
         settings.updatePanelShortcut(shortcut)
+        onStateChanged?()
+        return true
+    }
+
+    @discardableResult
+    func updateClipboardHistoryShortcut(_ shortcut: KeyboardShortcut) -> Bool {
+        guard clipboardHistoryHotKey.register(shortcut) == noErr else {
+            clipboardHistoryError = conflictMessage(name: "剪贴板历史", shortcut: shortcut)
+            onStateChanged?()
+            return false
+        }
+        clipboardHistoryError = nil
+        settings.updateClipboardHistoryShortcut(shortcut)
         onStateChanged?()
         return true
     }
@@ -195,6 +214,15 @@ final class GlobalShortcutCoordinator: ObservableObject {
             return
         }
         panelError = conflictMessage(name: "面板唤起", shortcut: configured)
+    }
+
+    private func registerInitialClipboardHistoryShortcut() {
+        let configured = settings.clipboardHistoryShortcut
+        guard clipboardHistoryHotKey.register(configured) == noErr else {
+            clipboardHistoryError = conflictMessage(name: "剪贴板历史", shortcut: configured)
+            return
+        }
+        clipboardHistoryError = nil
     }
 
     private func registerCrossScreenShortcuts() {

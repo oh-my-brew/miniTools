@@ -11,6 +11,9 @@ final class AppSettingsTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
 
         XCTAssertEqual(settings.panelShortcut, .panelDefault)
+        XCTAssertEqual(settings.clipboardHistoryShortcut, .clipboardHistoryDefault)
+        XCTAssertTrue(settings.clipboardHistoryEnabled)
+        XCTAssertEqual(settings.clipboardHistoryRetention, .oneMonth)
         XCTAssertEqual(settings.panelShortcut.displayName, "⌃⌥⇧⌘Space")
         XCTAssertEqual(settings.lastFeaturePanel, .encodingConversion)
     }
@@ -85,6 +88,26 @@ final class AppSettingsTests: XCTestCase {
 
         let restored = AppSettings(defaults: defaults)
         XCTAssertEqual(restored.panelShortcut, shortcut)
+    }
+
+    @MainActor
+    func testUpdatesAndPersistsClipboardHistorySettings() throws {
+        let (defaults, suiteName) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults)
+        let shortcut = KeyboardShortcut(
+            keyCode: UInt32(kVK_ANSI_H),
+            carbonModifiers: UInt32(cmdKey | optionKey)
+        )
+
+        settings.updateClipboardHistoryShortcut(shortcut)
+        settings.updateClipboardHistoryEnabled(false)
+        settings.updateClipboardHistoryRetention(.oneYear)
+
+        let restored = AppSettings(defaults: defaults)
+        XCTAssertEqual(restored.clipboardHistoryShortcut, shortcut)
+        XCTAssertFalse(restored.clipboardHistoryEnabled)
+        XCTAssertEqual(restored.clipboardHistoryRetention, .oneYear)
     }
 
     @MainActor

@@ -9,6 +9,7 @@ final class SettingsWindowController {
     private let closedLidRunningController: ClosedLidRunningController
     private let rustDeskXHeatProtectionController: RustDeskXHeatProtectionController
     private let dsStoreManagementController: DSStoreManagementController
+    private let clipboardHistoryController: ClipboardHistoryPanelController
     private let usageStatistics: UsageStatisticsStore
     private lazy var window = makeWindow()
 
@@ -19,6 +20,7 @@ final class SettingsWindowController {
         closedLidRunningController: ClosedLidRunningController,
         rustDeskXHeatProtectionController: RustDeskXHeatProtectionController,
         dsStoreManagementController: DSStoreManagementController,
+        clipboardHistoryController: ClipboardHistoryPanelController,
         usageStatistics: UsageStatisticsStore
     ) {
         self.settings = settings
@@ -27,6 +29,7 @@ final class SettingsWindowController {
         self.closedLidRunningController = closedLidRunningController
         self.rustDeskXHeatProtectionController = rustDeskXHeatProtectionController
         self.dsStoreManagementController = dsStoreManagementController
+        self.clipboardHistoryController = clipboardHistoryController
         self.usageStatistics = usageStatistics
     }
 
@@ -43,6 +46,7 @@ final class SettingsWindowController {
             closedLidRunningController: closedLidRunningController,
             rustDeskXHeatProtectionController: rustDeskXHeatProtectionController,
             dsStoreManagementController: dsStoreManagementController,
+            clipboardHistoryController: clipboardHistoryController,
             usageStatistics: usageStatistics
         )
         let hostingController = NSHostingController(rootView: content)

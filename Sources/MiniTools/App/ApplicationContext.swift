@@ -9,6 +9,7 @@ final class ApplicationContext: ObservableObject {
     @Published private(set) var closedLidRunningController: ClosedLidRunningController?
     @Published private(set) var rustDeskXHeatProtectionController: RustDeskXHeatProtectionController?
     @Published private(set) var dsStoreManagementController: DSStoreManagementController?
+    @Published private(set) var clipboardHistoryController: ClipboardHistoryPanelController?
 
     init(
         settings: AppSettings = AppSettings(),
@@ -36,5 +37,9 @@ final class ApplicationContext: ObservableObject {
 
     func install(dsStoreManagementController: DSStoreManagementController) {
         self.dsStoreManagementController = dsStoreManagementController
+    }
+
+    func install(clipboardHistoryController: ClipboardHistoryPanelController) {
+        self.clipboardHistoryController = clipboardHistoryController
     }
 }

@@ -2,6 +2,7 @@ import SwiftUI
 
 private enum SettingsCategory: String, CaseIterable, Identifiable {
     case general
+    case clipboardHistory
     case defaultApplications
     case windowManagement
     case closedLidRunning
@@ -15,6 +16,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general: "通用"
+        case .clipboardHistory: "剪贴板历史"
         case .defaultApplications: "默认应用"
         case .windowManagement: "窗口管理"
         case .closedLidRunning: "合盖运行"
@@ -29,6 +31,8 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .general:
             "配置应用启动、工具面板与转换参数。"
+        case .clipboardHistory:
+            "配置本机剪贴板历史、保留期限和唤起快捷键。"
         case .defaultApplications:
             "查看文本与代码文件的当前默认应用，并按需改为 Sublime Text。"
         case .windowManagement:
@@ -49,6 +53,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .general: "gearshape"
+        case .clipboardHistory: "clipboard"
         case .defaultApplications: "doc.text"
         case .windowManagement: "macwindow"
         case .closedLidRunning: "laptopcomputer"
@@ -68,7 +73,8 @@ struct SettingsSceneRoot: View {
            let mouseBindingCoordinator = context.mouseBindingCoordinator,
            let closedLidRunningController = context.closedLidRunningController,
            let rustDeskXHeatProtectionController = context.rustDeskXHeatProtectionController,
-           let dsStoreManagementController = context.dsStoreManagementController {
+           let dsStoreManagementController = context.dsStoreManagementController,
+           let clipboardHistoryController = context.clipboardHistoryController {
             SettingsView(
                 settings: context.settings,
                 shortcutCoordinator: shortcutCoordinator,
@@ -76,6 +82,7 @@ struct SettingsSceneRoot: View {
                 closedLidRunningController: closedLidRunningController,
                 rustDeskXHeatProtectionController: rustDeskXHeatProtectionController,
                 dsStoreManagementController: dsStoreManagementController,
+                clipboardHistoryController: clipboardHistoryController,
                 usageStatistics: context.usageStatistics
             )
         } else {
@@ -92,6 +99,7 @@ struct SettingsView: View {
     @ObservedObject var closedLidRunningController: ClosedLidRunningController
     @ObservedObject var rustDeskXHeatProtectionController: RustDeskXHeatProtectionController
     @ObservedObject var dsStoreManagementController: DSStoreManagementController
+    let clipboardHistoryController: ClipboardHistoryPanelController
     @ObservedObject var usageStatistics: UsageStatisticsStore
     @State private var selectedCategory: SettingsCategory? = .general
 
@@ -113,6 +121,7 @@ struct SettingsView: View {
                 closedLidRunningController: closedLidRunningController,
                 rustDeskXHeatProtectionController: rustDeskXHeatProtectionController,
                 dsStoreManagementController: dsStoreManagementController,
+                clipboardHistoryController: clipboardHistoryController,
                 usageStatistics: usageStatistics
             )
             .id(selectedCategory)
@@ -130,14 +139,18 @@ private struct SettingsCategoryDetail: View {
     @ObservedObject var closedLidRunningController: ClosedLidRunningController
     @ObservedObject var rustDeskXHeatProtectionController: RustDeskXHeatProtectionController
     @ObservedObject var dsStoreManagementController: DSStoreManagementController
+    let clipboardHistoryController: ClipboardHistoryPanelController
     @ObservedObject var usageStatistics: UsageStatisticsStore
     @State private var confirmsStatisticsClear = false
+    @State private var confirmsClipboardHistoryClear = false
 
     var body: some View {
         Form {
             switch category {
             case .general:
                 generalSettings
+            case .clipboardHistory:
+                clipboardHistorySettings
             case .defaultApplications:
                 DefaultApplicationSettingsView()
             case .windowManagement:
@@ -171,6 +184,14 @@ private struct SettingsCategoryDetail: View {
             }
         } message: {
             Text("此操作只清除本机统计，无法撤销。")
+        }
+        .alert("清除全部剪贴板历史？", isPresented: $confirmsClipboardHistoryClear) {
+            Button("取消", role: .cancel) {}
+            Button("清除", role: .destructive) {
+                Task { try? await clipboardHistoryController.deleteAll() }
+            }
+        } message: {
+            Text("所有记录只保存在本机；清除后无法恢复。")
         }
     }
 
@@ -213,6 +234,49 @@ private struct SettingsCategoryDetail: View {
                     subtitle: "用于“压缩图片”操作；质量越高，文件通常越大"
                 )
             }
+        }
+    }
+
+    @ViewBuilder
+    private var clipboardHistorySettings: some View {
+        Section {
+            Toggle(
+                "记录剪贴板历史",
+                isOn: Binding(
+                    get: { settings.clipboardHistoryEnabled },
+                    set: { clipboardHistoryController.setCaptureEnabled($0) }
+                )
+            )
+            Picker(
+                "保留历史",
+                selection: Binding(
+                    get: { settings.clipboardHistoryRetention },
+                    set: { clipboardHistoryController.updateRetention($0) }
+                )
+            ) {
+                ForEach(ClipboardHistoryRetention.allCases, id: \.self) { retention in
+                    Text(retention.title).tag(retention)
+                }
+            }
+            LabeledContent("清理") {
+                Button("清除全部历史", role: .destructive) {
+                    confirmsClipboardHistoryClear = true
+                }
+            }
+        } header: {
+            Text("记录")
+        } footer: {
+            Text("记录保存在本机。机密或临时剪贴板内容会自动跳过。")
+        }
+
+        Section("快捷键") {
+            shortcutRow(
+                title: "打开剪贴板历史",
+                subtitle: "默认 ⌘⇧V；与其他应用冲突时可在这里修改",
+                shortcut: settings.clipboardHistoryShortcut,
+                error: shortcutCoordinator.clipboardHistoryError,
+                onChange: shortcutCoordinator.updateClipboardHistoryShortcut
+            )
         }
     }
 

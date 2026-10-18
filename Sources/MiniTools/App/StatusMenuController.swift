@@ -3,17 +3,20 @@ import AppKit
 @MainActor
 final class StatusMenuController: NSObject, NSMenuDelegate {
     var onOpenPanel: (() -> Void)?
+    var onOpenClipboardHistory: (() -> Void)?
     var onCheckForUpdates: (() -> Void)?
     var onOpenSettings: (() -> Void)?
     var onToggleClosedLidRunning: (() -> Void)?
     var onMenuWillOpen: (() -> Void)?
 
     static let toolPanelTitle = "工具面板"
+    static let clipboardHistoryTitle = "剪贴板历史"
     static let closedLidRunningTitle = "合盖运行"
     static let checkForUpdatesTitle = "检查更新…"
 
     private var statusItem: NSStatusItem?
     private var panelItem: NSMenuItem?
+    private var clipboardHistoryItem: NSMenuItem?
     private var closedLidRunningItem: NSMenuItem?
 
     func start() {
@@ -32,6 +35,16 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         panelItem.image = AppArtwork.hammerIcon(size: NSSize(width: 15, height: 15))
         menu.addItem(panelItem)
         self.panelItem = panelItem
+
+        let clipboardHistoryItem = NSMenuItem(
+            title: Self.clipboardHistoryTitle,
+            action: #selector(openClipboardHistory),
+            keyEquivalent: ""
+        )
+        clipboardHistoryItem.target = self
+        clipboardHistoryItem.image = menuIcon(systemName: "clipboard")
+        menu.addItem(clipboardHistoryItem)
+        self.clipboardHistoryItem = clipboardHistoryItem
 
         let closedLidRunningItem = NSMenuItem(
             title: Self.closedLidRunningTitle,
@@ -84,6 +97,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         panelItem?.title = shortcutCoordinator.panelError == nil
             ? "\(Self.toolPanelTitle)（\(settings.panelShortcut.displayName)）"
             : "\(Self.toolPanelTitle)：快捷键冲突"
+        clipboardHistoryItem?.title = shortcutCoordinator.clipboardHistoryError == nil
+            ? "\(Self.clipboardHistoryTitle)（\(settings.clipboardHistoryShortcut.displayName)）"
+            : "\(Self.clipboardHistoryTitle)：快捷键冲突"
 
         let isBusy = closedLidRunningController.isBusy
         let isEnabled = closedLidRunningController.isFeatureEnabled
@@ -112,6 +128,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     @objc private func openPanel() {
         onOpenPanel?()
+    }
+
+    @objc private func openClipboardHistory() {
+        onOpenClipboardHistory?()
     }
 
     @objc private func openSettings() {
