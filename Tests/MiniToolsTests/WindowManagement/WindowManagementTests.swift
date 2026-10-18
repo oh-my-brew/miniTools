@@ -107,15 +107,7 @@ final class WindowManagementTests: XCTestCase {
             [.upperLeft, .upperRight, .lowerLeft, .lowerRight, .left, .right,
              .horizontalHalves, .verticalThirds, .maximize]
         )
-        XCTAssertTrue(
-            WindowControlCatalog.layoutCommands
-                .filter { $0.id != .verticalThirds }
-                .allSatisfy { $0.frames.count == 2 }
-        )
-        XCTAssertEqual(
-            WindowControlCatalog.layoutCommand(for: .verticalThirds)?.frames.count,
-            3
-        )
+        XCTAssertTrue(WindowControlCatalog.layoutCommands.allSatisfy { $0.frames.count == 2 })
         XCTAssertEqual(WindowControlCatalog.descriptors.count, 12)
         XCTAssertEqual(
             WindowControlCatalog.windowLayoutDescriptors.map(\.id),
@@ -214,25 +206,25 @@ final class WindowManagementTests: XCTestCase {
         )
     }
 
-    func testThirdsCommandCyclesLeftMiddleRight() throws {
+    func testThirdsCommandCyclesLeftAndRight() throws {
         let thirds = try XCTUnwrap(WindowControlCatalog.layoutCommand(for: .verticalThirds))
 
-        XCTAssertEqual(thirds.frames.map(\.x), [0, 1.0 / 3.0, 2.0 / 3.0])
-        XCTAssertEqual(thirds.frames.map(\.width), [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0])
+        XCTAssertEqual(thirds.frames.map(\.x), [0, 2.0 / 3.0])
+        XCTAssertEqual(thirds.frames.map(\.width), [1.0 / 3.0, 1.0 / 3.0])
         XCTAssertEqual(
             WindowControlCatalog.descriptors.first(where: { $0.id == .verticalThirds })?.title,
-            "左中右三分之一切换"
+            "左右三分之一切换"
         )
         XCTAssertEqual(
             WindowControlCatalog.descriptors.first(where: { $0.id == .verticalThirds })?.subtitle,
-            "左侧三分之一 ↔ 中间三分之一 ↔ 右侧三分之一"
+            "左侧三分之一 ↔ 右侧三分之一"
         )
         XCTAssertEqual(
             WindowControlCatalog.targetTitle(for: .verticalThirds, candidateIndex: 1),
-            "中间三分之一"
+            "右侧三分之一"
         )
         XCTAssertEqual(
-            WindowControlCatalog.statisticsID(for: .verticalThirds, candidateIndex: 2),
+            WindowControlCatalog.statisticsID(for: .verticalThirds, candidateIndex: 1),
             "verticalThirds.2"
         )
 
@@ -241,17 +233,13 @@ final class WindowManagementTests: XCTestCase {
             WindowGeometry.targetFrame(for: $0, in: visibleFrame)
         }
 
-        // 左 → 中 → 右 → 左
+        // 左 → 右 → 左
         XCTAssertEqual(
             WindowGeometry.nextTarget(currentFrame: targets[0], candidates: targets),
             targets[1]
         )
         XCTAssertEqual(
             WindowGeometry.nextTarget(currentFrame: targets[1], candidates: targets),
-            targets[2]
-        )
-        XCTAssertEqual(
-            WindowGeometry.nextTarget(currentFrame: targets[2], candidates: targets),
             targets[0]
         )
     }

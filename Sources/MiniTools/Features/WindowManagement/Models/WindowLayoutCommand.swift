@@ -110,10 +110,9 @@ enum WindowControlCatalog {
             id: .verticalThirds,
             frames: [
                 .init(0, 0, 1.0 / 3.0, 1),
-                .init(1.0 / 3.0, 0, 1.0 / 3.0, 1),
                 .init(2.0 / 3.0, 0, 1.0 / 3.0, 1)
             ],
-            targetTitles: ["左侧三分之一", "中间三分之一", "右侧三分之一"]
+            targetTitles: ["左侧三分之一", "右侧三分之一"]
         ),
         .init(
             id: .maximize,
@@ -132,8 +131,8 @@ enum WindowControlCatalog {
         descriptor(.horizontalHalves, "上下半屏切换", "上半屏 ↔ 下半屏", kVK_ANSI_Y),
         descriptor(
             .verticalThirds,
-            "左中右三分之一切换",
-            "左侧三分之一 ↔ 中间三分之一 ↔ 右侧三分之一",
+            "左右三分之一切换",
+            "左侧三分之一 ↔ 右侧三分之一",
             kVK_ANSI_O
         ),
         descriptor(.maximize, "铺满当前屏幕", "使用屏幕可用区域", kVK_ANSI_Backslash),
@@ -185,6 +184,11 @@ enum WindowControlCatalog {
     static func statisticsID(for id: WindowControlID, candidateIndex: Int) -> String {
         guard let command = layoutCommand(for: id), command.cyclesThroughTargets else {
             return id.rawValue
+        }
+        // `verticalThirds.2` historically represented the right third. Keep that stable
+        // after removing the middle candidate so existing statistics do not change meaning.
+        if id == .verticalThirds, candidateIndex == 1 {
+            return "verticalThirds.2"
         }
         return "\(id.rawValue).\(candidateIndex)"
     }
