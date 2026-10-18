@@ -9,6 +9,11 @@ struct KeyboardShortcut: Codable, Equatable, Sendable {
         carbonModifiers: UInt32(cmdKey | optionKey | controlKey | shiftKey)
     )
 
+    static let clipboardHistoryDefault = KeyboardShortcut(
+        keyCode: UInt32(kVK_ANSI_V),
+        carbonModifiers: UInt32(cmdKey | shiftKey)
+    )
+
     static let previousPanelDefault = KeyboardShortcut(
         keyCode: UInt32(kVK_Space),
         carbonModifiers: UInt32(optionKey)
