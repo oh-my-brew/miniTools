@@ -7,6 +7,7 @@ final class ApplicationContext: ObservableObject {
     @Published private(set) var shortcutCoordinator: GlobalShortcutCoordinator?
     @Published private(set) var mouseBindingCoordinator: MouseBindingCoordinator?
     @Published private(set) var closedLidRunningController: ClosedLidRunningController?
+    @Published private(set) var rustDeskXHeatProtectionController: RustDeskXHeatProtectionController?
     @Published private(set) var dsStoreManagementController: DSStoreManagementController?
 
     init(
@@ -27,6 +28,10 @@ final class ApplicationContext: ObservableObject {
 
     func install(closedLidRunningController: ClosedLidRunningController) {
         self.closedLidRunningController = closedLidRunningController
+    }
+
+    func install(rustDeskXHeatProtectionController: RustDeskXHeatProtectionController) {
+        self.rustDeskXHeatProtectionController = rustDeskXHeatProtectionController
     }
 
     func install(dsStoreManagementController: DSStoreManagementController) {

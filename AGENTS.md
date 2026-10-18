@@ -65,7 +65,7 @@
 ### 合盖运行
 
 - 状态栏通过单个带勾选状态的“合盖运行”菜单项直接切换状态，不提供时长选项。
-- 合盖运行仅允许用户手动开启或关闭，不检测 Codex、Claude 或其他进程状态，也不增加自动触发规则。
+- 合盖运行仅允许用户手动开启或关闭，不检测 Codex、Claude 等进程状态，也不增加自动触发规则。RustDeskX 防发热是独立开关，默认关闭；开启后只在合盖或锁屏事件发生时检查并强制终止 bundle ID 为 `com.omzcj.rustdeskx` 的进程，不得模糊匹配其他应用。
 - helper 只允许开启、关闭和查询合盖运行状态，不得接受任意命令、路径或 `pmset` 参数；不跟踪 `disablesleep` 的设置者。
 - 合盖功能开关与 `SleepDisabled` 实际值是两个独立状态；功能开关需要持久化。主应用无论开关状态都每分钟读取并展示实际值，状态栏锤子旁的小点只表示实际值为 1。
 - 功能开关打开时，电量低于 20% 必须确保 `SleepDisabled` 为 0，高于 25% 必须确保其为 1，20%–25% 之间不修改；不判断或尊重其他程序的修改。手动关闭开关时立即设置一次 0，此后只读取、不主动修改。
@@ -105,7 +105,7 @@
 | `Features/SafariWindows` | Safari AX 窗口读取、标题推导、排序、布局、选择和激活。保持 Service、ViewModel、View 分层。 |
 | `Features/WindowManagement` | 窗口几何、布局命令、AX 健康检查、跨屏鼠标移动和定位动画。 |
 | `Features/MouseBindings` | 侧键事件监听、手势识别、动作配置和拖动路径反馈。 |
-| `Features/ClosedLidRunning` | 合盖运行、电量暂停与恢复、后台服务状态和 XPC 客户端。 |
+| `Features/ClosedLidRunning` | 合盖运行、电量暂停与恢复、RustDeskX 防发热、后台服务状态和 XPC 客户端。 |
 | `Features/DSStoreManagement` | 根目录 FSEvents 监控、DS_Store 清理策略、计数和登录启动状态。 |
 | `Features/DefaultApplications` | 文本与代码文件类型目录、UTType 映射、NSWorkspace 默认应用查询/写入和设置 UI。 |
 | `Sources/MiniToolsPowerSupport` | 主应用与 root helper 共用的最小 XPC 协议、签名要求和 `pmset` 解析。 |

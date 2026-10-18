@@ -12,6 +12,9 @@ final class AppController: NSObject {
     private lazy var closedLidRunningController = ClosedLidRunningController(
         settings: settings
     )
+    private lazy var rustDeskXHeatProtectionController = RustDeskXHeatProtectionController(
+        settings: settings
+    )
     private lazy var dsStoreManagementController = DSStoreManagementController(
         settings: settings
     )
@@ -64,6 +67,9 @@ final class AppController: NSObject {
         applicationContext.install(shortcutCoordinator: shortcutCoordinator)
         applicationContext.install(mouseBindingCoordinator: mouseBindingCoordinator)
         applicationContext.install(closedLidRunningController: closedLidRunningController)
+        applicationContext.install(
+            rustDeskXHeatProtectionController: rustDeskXHeatProtectionController
+        )
         applicationContext.install(dsStoreManagementController: dsStoreManagementController)
 
         settingsWindowController = SettingsWindowController(
@@ -71,6 +77,7 @@ final class AppController: NSObject {
             shortcutCoordinator: shortcutCoordinator,
             mouseBindingCoordinator: mouseBindingCoordinator,
             closedLidRunningController: closedLidRunningController,
+            rustDeskXHeatProtectionController: rustDeskXHeatProtectionController,
             dsStoreManagementController: dsStoreManagementController,
             usageStatistics: applicationContext.usageStatistics
         )
@@ -101,6 +108,7 @@ final class AppController: NSObject {
         }
         statusMenuController.start()
         closedLidRunningController.start()
+        rustDeskXHeatProtectionController.start()
         dsStoreManagementController.start()
         shortcutCoordinator.start()
         mouseBindingCoordinator.start()
@@ -127,6 +135,7 @@ final class AppController: NSObject {
         shortcutCoordinator?.stop()
         mouseBindingCoordinator?.stop()
         closedLidRunningController.stop()
+        rustDeskXHeatProtectionController.stop()
         dsStoreManagementController.stop()
         featurePanelController.stop()
     }
