@@ -7,6 +7,7 @@ final class SettingsWindowController {
     private let shortcutCoordinator: GlobalShortcutCoordinator
     private let mouseBindingCoordinator: MouseBindingCoordinator
     private let closedLidRunningController: ClosedLidRunningController
+    private let rustDeskXHeatProtectionController: RustDeskXHeatProtectionController
     private let dsStoreManagementController: DSStoreManagementController
     private let usageStatistics: UsageStatisticsStore
     private lazy var window = makeWindow()
@@ -16,6 +17,7 @@ final class SettingsWindowController {
         shortcutCoordinator: GlobalShortcutCoordinator,
         mouseBindingCoordinator: MouseBindingCoordinator,
         closedLidRunningController: ClosedLidRunningController,
+        rustDeskXHeatProtectionController: RustDeskXHeatProtectionController,
         dsStoreManagementController: DSStoreManagementController,
         usageStatistics: UsageStatisticsStore
     ) {
@@ -23,6 +25,7 @@ final class SettingsWindowController {
         self.shortcutCoordinator = shortcutCoordinator
         self.mouseBindingCoordinator = mouseBindingCoordinator
         self.closedLidRunningController = closedLidRunningController
+        self.rustDeskXHeatProtectionController = rustDeskXHeatProtectionController
         self.dsStoreManagementController = dsStoreManagementController
         self.usageStatistics = usageStatistics
     }
@@ -38,6 +41,7 @@ final class SettingsWindowController {
             shortcutCoordinator: shortcutCoordinator,
             mouseBindingCoordinator: mouseBindingCoordinator,
             closedLidRunningController: closedLidRunningController,
+            rustDeskXHeatProtectionController: rustDeskXHeatProtectionController,
             dsStoreManagementController: dsStoreManagementController,
             usageStatistics: usageStatistics
         )

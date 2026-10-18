@@ -14,6 +14,7 @@ final class AppSettings: ObservableObject {
         static let mouseBindings = "mouseBindings"
         static let mouseDragThresholdRatio = "mouseDragThresholdRatio"
         static let closedLidRunningEnabled = "closedLidRunningEnabled"
+        static let rustDeskXHeatProtectionEnabled = "rustDeskXHeatProtectionEnabled"
         static let dsStoreManagementEnabled = "dsStoreManagementEnabled"
         static let launchAtLoginEnabled = "launchAtLoginEnabled"
         static let legacyMouseDragThreshold = "mouseDragThreshold"
@@ -38,6 +39,7 @@ final class AppSettings: ObservableObject {
     @Published private(set) var mouseBindings: [MouseBindingKey: AppCommand]
     @Published private(set) var mouseDragThresholdRatio: Double
     @Published private(set) var closedLidRunningEnabled: Bool
+    @Published private(set) var rustDeskXHeatProtectionEnabled: Bool
     @Published private(set) var dsStoreManagementEnabled: Bool
     @Published private(set) var launchAtLoginEnabled: Bool
     @Published var compressionQuality: Double {
@@ -75,6 +77,9 @@ final class AppSettings: ObservableObject {
         mouseBindings = Self.loadMouseBindings(defaults: defaults)
         mouseDragThresholdRatio = Self.loadMouseDragThresholdRatio(defaults: defaults)
         closedLidRunningEnabled = defaults.bool(forKey: Keys.closedLidRunningEnabled)
+        rustDeskXHeatProtectionEnabled = defaults.bool(
+            forKey: Keys.rustDeskXHeatProtectionEnabled
+        )
         dsStoreManagementEnabled = defaults.bool(forKey: Keys.dsStoreManagementEnabled)
         launchAtLoginEnabled = defaults.bool(forKey: Keys.launchAtLoginEnabled)
 
@@ -171,6 +176,12 @@ final class AppSettings: ObservableObject {
         guard enabled != closedLidRunningEnabled else { return }
         closedLidRunningEnabled = enabled
         defaults.set(enabled, forKey: Keys.closedLidRunningEnabled)
+    }
+
+    func updateRustDeskXHeatProtectionEnabled(_ enabled: Bool) {
+        guard enabled != rustDeskXHeatProtectionEnabled else { return }
+        rustDeskXHeatProtectionEnabled = enabled
+        defaults.set(enabled, forKey: Keys.rustDeskXHeatProtectionEnabled)
     }
 
     func updateDSStoreManagementEnabled(_ enabled: Bool) {

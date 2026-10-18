@@ -34,7 +34,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .windowManagement:
             "配置窗口布局、跨屏操作与全局快捷键。"
         case .closedLidRunning:
-            "控制合盖运行并查看后台组件与系统状态。"
+            "控制合盖运行、防发热保护并查看系统状态。"
         case .dsStoreManagement:
             "清理磁盘中的 .DS_Store，并按需持续监控。"
         case .mouseBindings:
@@ -67,12 +67,14 @@ struct SettingsSceneRoot: View {
         if let shortcutCoordinator = context.shortcutCoordinator,
            let mouseBindingCoordinator = context.mouseBindingCoordinator,
            let closedLidRunningController = context.closedLidRunningController,
+           let rustDeskXHeatProtectionController = context.rustDeskXHeatProtectionController,
            let dsStoreManagementController = context.dsStoreManagementController {
             SettingsView(
                 settings: context.settings,
                 shortcutCoordinator: shortcutCoordinator,
                 mouseBindingCoordinator: mouseBindingCoordinator,
                 closedLidRunningController: closedLidRunningController,
+                rustDeskXHeatProtectionController: rustDeskXHeatProtectionController,
                 dsStoreManagementController: dsStoreManagementController,
                 usageStatistics: context.usageStatistics
             )
@@ -88,6 +90,7 @@ struct SettingsView: View {
     @ObservedObject var shortcutCoordinator: GlobalShortcutCoordinator
     @ObservedObject var mouseBindingCoordinator: MouseBindingCoordinator
     @ObservedObject var closedLidRunningController: ClosedLidRunningController
+    @ObservedObject var rustDeskXHeatProtectionController: RustDeskXHeatProtectionController
     @ObservedObject var dsStoreManagementController: DSStoreManagementController
     @ObservedObject var usageStatistics: UsageStatisticsStore
     @State private var selectedCategory: SettingsCategory? = .general
@@ -108,6 +111,7 @@ struct SettingsView: View {
                 shortcutCoordinator: shortcutCoordinator,
                 mouseBindingCoordinator: mouseBindingCoordinator,
                 closedLidRunningController: closedLidRunningController,
+                rustDeskXHeatProtectionController: rustDeskXHeatProtectionController,
                 dsStoreManagementController: dsStoreManagementController,
                 usageStatistics: usageStatistics
             )
@@ -124,6 +128,7 @@ private struct SettingsCategoryDetail: View {
     @ObservedObject var shortcutCoordinator: GlobalShortcutCoordinator
     @ObservedObject var mouseBindingCoordinator: MouseBindingCoordinator
     @ObservedObject var closedLidRunningController: ClosedLidRunningController
+    @ObservedObject var rustDeskXHeatProtectionController: RustDeskXHeatProtectionController
     @ObservedObject var dsStoreManagementController: DSStoreManagementController
     @ObservedObject var usageStatistics: UsageStatisticsStore
     @State private var confirmsStatisticsClear = false
@@ -369,6 +374,30 @@ private struct SettingsCategoryDetail: View {
                 Text("每分钟检查电量；低于 20% 时关闭，高于 25% 时自动恢复。")
                 if let error = closedLidRunningController.lastError {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+
+        Section {
+            Toggle(
+                "合盖或锁屏时强制关闭 RustDeskX",
+                isOn: Binding(
+                    get: { rustDeskXHeatProtectionController.isEnabled },
+                    set: { rustDeskXHeatProtectionController.setEnabled($0) }
+                )
+            )
+        } header: {
+            Text("防发热")
+        } footer: {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("默认关闭。开启后仅在合盖或锁屏事件发生时检查并强制关闭正在运行的 RustDeskX。")
+                if let lastAction = rustDeskXHeatProtectionController.lastAction {
+                    Label(lastAction, systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+                if let lastError = rustDeskXHeatProtectionController.lastError {
+                    Label(lastError, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                 }
             }
