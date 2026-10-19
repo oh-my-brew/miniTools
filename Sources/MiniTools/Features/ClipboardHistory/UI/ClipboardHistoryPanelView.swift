@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 enum ClipboardHistoryPanelMetrics {
     static let height: CGFloat = 320
@@ -141,7 +140,7 @@ struct ClipboardHistoryPanelView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(item.kind.title)
+                    Text(cardTitle(item))
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(.white)
                     TimelineView(.periodic(from: .now, by: 60)) { context in
@@ -170,7 +169,7 @@ struct ClipboardHistoryPanelView: View {
                         - ClipboardHistoryPanelMetrics.cardHeaderHeight
                 )
                 .clipped()
-                .background(Color(nsColor: .controlBackgroundColor).opacity(0.72))
+                .background(Color(nsColor: .controlBackgroundColor))
         }
         .frame(
             width: ClipboardHistoryPanelMetrics.cardWidth,
@@ -209,47 +208,58 @@ struct ClipboardHistoryPanelView: View {
     @ViewBuilder
     private func cardContent(_ item: ClipboardHistoryItem) -> some View {
         if let data = viewModel.thumbnails[item.id], let image = NSImage(data: data) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFill()
-                .clipped()
-                .overlay(alignment: .bottom) {
-                    if !item.summary.isEmpty {
-                        Text(item.summary)
-                            .font(.caption2.monospacedDigit())
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(.ultraThinMaterial, in: Capsule())
-                            .padding(7)
-                    }
+            ZStack {
+                ClipboardHistoryCheckerboard()
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .padding(10)
+            }
+            .overlay(alignment: .bottom) {
+                if !item.summary.isEmpty {
+                    Text(item.summary)
+                        .font(.caption2.monospacedDigit())
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.black.opacity(0.58), in: Capsule())
+                        .foregroundStyle(.white)
+                        .padding(7)
                 }
+            }
         } else if item.kind == .link,
                   let link = ClipboardHistoryLinkPresentation(text: item.plainText) {
-            VStack(alignment: .leading, spacing: 8) {
-                Label(link.host, systemImage: "safari")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Text(link.title)
-                    .font(.system(size: 20, weight: .semibold))
-                    .lineLimit(4)
-                Spacer(minLength: 4)
+            VStack(spacing: 0) {
+                Spacer()
+                Image(systemName: "safari")
+                    .font(.system(size: 38, weight: .regular))
+                    .foregroundStyle(.tertiary)
+                Spacer()
                 Text(link.displayURL)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(14)
         } else if item.kind == .files {
-            VStack(spacing: 12) {
-                Image(nsImage: NSWorkspace.shared.icon(for: contentType(item.summary)))
+            let fileURLs = viewModel.fileURLs[item.id] ?? []
+            let fileURL = fileURLs.first
+            VStack(spacing: 0) {
+                Spacer(minLength: 8)
+                Image(nsImage: fileIcon(for: fileURL))
                     .resizable()
-                    .frame(width: 72, height: 72)
-                Text(item.summary)
-                    .font(.system(size: 15, weight: .medium))
-                    .lineLimit(3)
-                    .multilineTextAlignment(.center)
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(maxWidth: 100, maxHeight: 100)
+                Spacer(minLength: 8)
+                Text(filePathDescription(fileURLs: fileURLs, fallback: item.summary))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(14)
@@ -257,17 +267,29 @@ struct ClipboardHistoryPanelView: View {
             ZStack {
                 color
                 Text(item.plainText ?? "")
-                    .font(.headline.monospaced())
-                    .padding(8)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(
+                        Color(
+                            nsColor: ClipboardHistoryColorPresentation(text: item.plainText)?
+                                .foregroundColor ?? .labelColor
+                        )
+                    )
             }
         } else {
-            Text(item.summary)
-                .font(.system(size: 15, weight: .regular, design: .default))
-                .foregroundStyle(.primary)
-                .lineLimit(9)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(14)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(item.summary)
+                    .font(.system(size: 15, weight: .regular, design: .default))
+                    .foregroundStyle(.primary)
+                    .lineLimit(8)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                Spacer(minLength: 4)
+                Text("\(item.plainText?.count ?? item.summary.count) 个字符")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(14)
         }
     }
 
@@ -300,9 +322,23 @@ struct ClipboardHistoryPanelView: View {
         .background(.ultraThinMaterial, in: Capsule())
     }
 
-    private func contentType(_ value: String) -> UTType {
-        let pathExtension = (value as NSString).pathExtension
-        return UTType(filenameExtension: pathExtension) ?? .data
+    private func cardTitle(_ item: ClipboardHistoryItem) -> String {
+        guard item.kind == .files else { return item.kind.title }
+        let count = max(1, viewModel.fileURLs[item.id]?.count ?? 0)
+        return "\(count)个文件"
+    }
+
+    private func fileIcon(for URL: URL?) -> NSImage {
+        guard let URL else {
+            return NSImage(systemSymbolName: "doc", accessibilityDescription: nil) ?? NSImage()
+        }
+        return NSWorkspace.shared.icon(forFile: URL.path)
+    }
+
+    private func filePathDescription(fileURLs: [URL], fallback: String) -> String {
+        guard let first = fileURLs.first else { return fallback }
+        guard fileURLs.count > 1 else { return first.path }
+        return "\(first.path) 等 \(fileURLs.count) 个文件"
     }
 
     private func cardHeaderColor(_ item: ClipboardHistoryItem) -> Color {
@@ -315,5 +351,34 @@ struct ClipboardHistoryPanelView: View {
     private func colorValue(_ value: String?) -> Color? {
         guard let presentation = ClipboardHistoryColorPresentation(text: value) else { return nil }
         return Color(nsColor: presentation.color.nsColor)
+    }
+}
+
+private struct ClipboardHistoryCheckerboard: View {
+    private let cellSize: CGFloat = 10
+
+    var body: some View {
+        Canvas { context, size in
+            let columns = Int(ceil(size.width / cellSize))
+            let rows = Int(ceil(size.height / cellSize))
+            for row in 0..<rows {
+                for column in 0..<columns {
+                    let color = (row + column).isMultiple(of: 2)
+                        ? Color(nsColor: .windowBackgroundColor)
+                        : Color(nsColor: .underPageBackgroundColor)
+                    context.fill(
+                        Path(
+                            CGRect(
+                                x: CGFloat(column) * cellSize,
+                                y: CGFloat(row) * cellSize,
+                                width: cellSize,
+                                height: cellSize
+                            )
+                        ),
+                        with: .color(color)
+                    )
+                }
+            }
+        }
     }
 }

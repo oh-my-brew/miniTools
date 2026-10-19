@@ -302,6 +302,7 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate {
                     payloads: payloads,
                     plainTextOnly: plainTextOnly
                 )
+                await viewModel.promoteUsedItem(item)
                 guard shouldPaste else {
                     close(restoreFocus: true)
                     return
