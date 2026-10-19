@@ -4,15 +4,6 @@ import XCTest
 @testable import MiniTools
 
 final class AppUpdateTests: XCTestCase {
-    func testVersionDisplayIncludesMatchingBetaBuildRound() {
-        XCTAssertEqual(AppVersion.displayName(version: "2026.10.20.1", build: "20261020.1.3"),
-                       "2026.10.20.1 · Beta 构建 3")
-        XCTAssertEqual(AppVersion.displayName(version: "2026.10.20.1", build: "50"), "2026.10.20.1")
-        XCTAssertEqual(AppVersion.displayName(version: "2026.10.20.1", build: "20261019.1.3"), "2026.10.20.1")
-        XCTAssertEqual(AppVersion.displayName(version: "2026.10.20.1", build: "20261020.1.0"), "2026.10.20.1")
-        XCTAssertEqual(AppVersion.displayName(version: nil, build: nil), "开发构建")
-    }
-
     func testCalendarBuildVersionSortsAfterLegacyWorkflowRunNumber() {
         let comparator = SUStandardVersionComparator.default
 

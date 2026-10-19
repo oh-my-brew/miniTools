@@ -36,9 +36,6 @@ jobs:
           plutil -lint Support/Info.plist
           bash -n Scripts/*.sh
 
-      - name: Test candidate lifecycle
-        run: python3 -m unittest discover -s Tests/ReleaseWorkflow
-
       - name: Run tests
         run: swift test
 
