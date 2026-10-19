@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: product-release
+  group: beta-candidate
   cancel-in-progress: false
 
 jobs:
@@ -152,17 +152,13 @@ jobs:
 
       - name: Complete immutable candidate
         run: |
-          candidate_notes="$RUNNER_TEMP/candidate-notes.md"
-          gh release view "$CANDIDATE_TAG" --repo "$GITHUB_REPOSITORY" \
-            --json body --jq .body > "$candidate_notes"
-          printf '\nZIP SHA-256: %s\n' "$(cut -d ' ' -f 1 "$RUNNER_TEMP/archives/miniTools-$VERSION.zip.sha256")" >> "$candidate_notes"
           gh release upload "$CANDIDATE_TAG" \
             "$RUNNER_TEMP/archives/appcast-beta.xml" \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
           gh release edit "$CANDIDATE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --draft=false --prerelease --latest=false --notes-file "$candidate_notes"
+            --draft=false --prerelease --latest=false
 
       - name: Move rolling beta feed
         run: |
