@@ -14,9 +14,10 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read
 
 concurrency:
-  group: stable-promotion
+  group: product-release
   cancel-in-progress: false
 
 jobs:
@@ -53,6 +54,18 @@ jobs:
 
           stable_tag="v$version"
           candidate_commit="$(git rev-parse "$CANDIDATE_TAG^{commit}")"
+          # A protected approval is tied to this exact archive, never to "latest beta".
+          approval_prs="$(gh api "repos/$GITHUB_REPOSITORY/commits/$candidate_commit/pulls")"
+          if ! jq -e --arg tag "$CANDIDATE_TAG" --arg sha "$EXPECTED_SHA256" \
+            --arg commit "$candidate_commit" '
+              any(.[]; .head.sha == $commit
+                and (.state == "open" or .merged_at != null)
+                and any(.labels[]; .name == "release-approved")
+                and ((.body // "") | contains($tag) and contains($sha) and contains($commit)))
+            ' <<<"$approval_prs" >/dev/null; then
+            echo "Missing protected approval for this exact candidate and ZIP SHA." >&2
+            exit 1
+          fi
           plist_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Support/Info.plist)"
           test "$plist_version" = "$version"
 

@@ -4,6 +4,20 @@
 
 开发代码进入 `master` 且源码 CI 通过后，后台 Beta Release subagent 使用独立 worktree：
 
+先在已 fetch 的独立 worktree 中执行：
+
+```bash
+python3 Scripts/beta-preflight.py --source <完整开发源码SHA>
+python3 Scripts/beta-preflight.py --source <完整开发源码SHA> --apply
+```
+
+脚本默认只输出计划。`--apply` 重新检查所有条件后关闭被取代 PR；任何非零退出码均停止发行。
+同源码候选复用；失败时在原候选 commit 重跑 workflow。未批准且源码是新源码祖先的旧候选
+自动关闭并注明 superseded，Release 和标签永久保留。分叉、批准状态不明或非版本改动均停止。
+`release-approved` PR 标签保护用户已经批准的候选；Beta/Promote 在运行、排队或等待时也阻塞。
+两条 workflow 共用 `product-release` concurrency，签名与提升不会并发。GitHub concurrency
+不保证 FIFO；重新开始任务必须重新检查目标源码，不能依赖旧计划。
+
 1. 从远端默认分支中的准确开发 commit 创建单一候选 commit，只修改 `Support/Info.plist` 的 `CFBundleShortVersionString` 四段版本字段。
 2. 以候选 commit 派发 `Beta Candidate` workflow，并把同一 commit 作为 `source_commit` 输入。
 3. CI 运行测试，构建 arm64 主程序及 helper，完成 Developer ID 签名、Apple 公证、staple、Gatekeeper 和 SHA-256 校验。
@@ -21,7 +35,7 @@ gh workflow run beta.yml \
 ```
 
 Workflow 的 preflight 会要求 checkout、事件 `GITHUB_SHA` 和 `source_commit` 三者完全相同；候选必须是非 merge 的单一版本 commit，其父提交已经位于远端默认分支，且相对父提交只能修改 `Support/Info.plist` 的 `CFBundleShortVersionString`。这些检查在任何签名、公证凭据进入 job 前完成。
-候选 PR 在体验期间保持打开；beta 失败只修复候选流程或创建下一候选，不得创建正式标签。
+候选 PR 在体验期间保持打开，但 Open 本身不构成发行锁；beta 失败只修复候选流程或创建下一候选，不得创建正式标签。
 
 共享发布流程和 Fastlane lanes 来自 `oh-my-infra/apple-ci`；workflow 固定完整
 commit SHA，Fastfile 固定对应的 `v2026.09.12.1` 签名标签。应用发布结果位于
@@ -50,7 +64,7 @@ CI 通过只读 Fastlane Match 恢复 Developer ID 身份，不再保存项目�
 
 用户明确批准某个 beta 后，后台 Promote subagent：
 
-1. 锁定候选标签及用户批准时记录的 ZIP SHA-256，让原候选 commit 进入远端默认分支（保留该 commit，不使用会改写 commit 的 squash）。
+1. 主会话先在候选 PR 正文记录用户批准证据、候选标签、候选 commit 与 ZIP SHA-256，并添加 `release-approved` 标签（仅记录明确批准，不自行授予批准）。Promote subagent 核对该记录、PR 未被取代且仍 Open 或已合并，让原候选 commit 进入远端默认分支（保留该 commit，不使用会改写 commit 的 squash）。
 2. 在原候选 commit 上创建并推送签名 annotated 标签 `vYYYY.MM.DD.N`；不得让标签指向重新构建的其他 commit。
 3. 派发 `Promote Beta Candidate` workflow，输入候选标签和预期 SHA-256。
 4. Workflow 明确抓取远端默认分支，验证它包含候选 commit、候选仍为 prerelease、正式标签签名有效且指向候选 commit，并重新检查 ZIP 摘要、Developer ID 签名、公证 ticket、Gatekeeper 和 arm64 架构。
@@ -74,6 +88,10 @@ Cask 均使用完整四段版本。标签必须是签名的 annotated tag；用�
 `CFBundleVersion` 保留 beta 构建时的 `YYYYMMDD.N.RUN_NUMBER`。这个值跨旧的稳定 Release
 workflow 和新的 beta workflow 单调递增，避免两个 workflow 各自从 `1` 开始计数后，
 Sparkle 把新 beta 误判为旧构建。
+
+候选 PR 和 Release 统一记录 `Source commit`（候选的父提交）、`Candidate commit`、
+候选标签与 ZIP SHA-256；Release 构建时写入来源，完成后将资产身份补齐到 PR。
+已关闭且未合并的候选视为已取代，不得正式提升；需要重新批准时创建有效候选。
 
 ## 更新渠道
 
