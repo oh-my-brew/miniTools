@@ -8,45 +8,74 @@ import_from_git(
 
 default_platform(:mac)
 
-platform :mac do
-  desc "Build, sign, notarize, and optionally publish miniTools"
-  lane :release do
+def mini_tools_release_context(channel:)
     root = File.expand_path("..", __dir__)
-    escaped_root = Shellwords.escape(root)
     app_version = sh(
       "/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' #{Shellwords.escape(File.join(root, 'Support/Info.plist'))}",
       log: false
     ).strip
-    tag = ENV["GITHUB_REF_NAME"].to_s
-
     UI.user_error!("Version must use YYYY.MM.DD.N") unless app_version.match?(/^\d{4}\.\d{2}\.\d{2}\.[1-9]\d*$/)
-    version = app_version
-    expected_tag = "v#{version}"
-    if ENV["GITHUB_EVENT_NAME"] == "push"
-      UI.user_error!("Tag #{tag} does not match #{expected_tag}") unless tag == expected_tag
+
+    tag = case channel
+    when :stable
+      "v#{app_version}"
+    when :beta
+      run_number = ENV.fetch("GITHUB_RUN_NUMBER", "").strip
+      UI.user_error!("GITHUB_RUN_NUMBER is required for beta releases") unless run_number.match?(/^[1-9]\d*$/)
+      "v#{app_version}-beta.#{run_number}"
     else
-      tag = expected_tag
+      UI.user_error!("Unsupported release channel: #{channel}")
     end
 
-    ENV["VERSION"] = version
-    ENV["APP_VERSION"] = app_version
-    escaped_version = Shellwords.escape(version)
-    escaped_tag = Shellwords.escape(tag)
-    notes_path = File.join(ENV.fetch("RUNNER_TEMP", Dir.tmpdir), "miniTools-release-notes.md")
-    File.write(
-      notes_path,
-      "This build is signed with Developer ID and notarized by Apple.\n\n" \
-      "Accessibility permission is required for Safari window switching and window management; " \
-      "mouse side-button bindings also require Input Monitoring. Closed-lid running requires " \
-      "one-time approval for the bundled background helper.\n"
-    )
+    [root, app_version, tag]
+end
 
-    shared_macos_developer_id(
-      app_identifiers: ["com.omzcj.minitools"],
-      validation_command: "cd #{escaped_root} && bash -n Scripts/*.sh && swift test",
-      package_command: "cd #{escaped_root} && APP_BUILD=$GITHUB_RUN_NUMBER Scripts/package-release.sh #{escaped_version}",
-      notarize_command: "cd #{escaped_root} && Scripts/notarize-release.sh #{escaped_version}",
-      release_command: <<~SHELL
+def mini_tools_package(channel:, publish:)
+    root, version, tag = mini_tools_release_context(channel: channel)
+    run_number = ENV.fetch("GITHUB_RUN_NUMBER", "").strip
+    UI.user_error!("GITHUB_RUN_NUMBER is required") unless run_number.match?(/^[1-9]\d*$/)
+    version_parts = version.split(".")
+    build_version = "#{version_parts[0, 3].join}.#{version_parts[3]}.#{run_number}"
+    escaped_root = Shellwords.escape(root)
+    escaped_version = Shellwords.escape(version)
+    escaped_build_version = Shellwords.escape(build_version)
+    escaped_tag = Shellwords.escape(tag)
+    notes_path = File.join(ENV.fetch("RUNNER_TEMP", Dir.tmpdir), "miniTools-#{channel}-release-notes.md")
+    notes = if channel == :beta
+      "Beta candidate built from commit #{ENV.fetch('GITHUB_SHA', 'unknown')}. " \
+        "It is signed with Developer ID and notarized by Apple, but must not be promoted " \
+        "without explicit user approval.\n"
+    else
+      "This build is signed with Developer ID and notarized by Apple.\n\n" \
+        "Accessibility permission is required for Safari window switching and window management; " \
+        "mouse side-button bindings also require Input Monitoring. Closed-lid running requires " \
+        "one-time approval for the bundled background helper.\n"
+    end
+    File.write(notes_path, notes)
+
+    release_command = if channel == :beta
+      <<~SHELL
+        cd #{escaped_root}
+        test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+        if gh release view #{escaped_tag} >/dev/null 2>&1; then
+          test "$(gh release view #{escaped_tag} --json isDraft --jq .isDraft)" = true || {
+            echo "Published beta release #{tag} already exists; refusing to replace it." >&2
+            exit 1
+          }
+          gh release upload #{escaped_tag} \
+            dist/miniTools-#{escaped_version}.zip \
+            dist/miniTools-#{escaped_version}.zip.sha256 --clobber
+        else
+          gh release create #{escaped_tag} \
+            dist/miniTools-#{escaped_version}.zip \
+            dist/miniTools-#{escaped_version}.zip.sha256 \
+            --target "$GITHUB_SHA" --draft --prerelease --latest=false \
+            --title "miniTools #{version} Beta" \
+            --notes-file #{Shellwords.escape(notes_path)}
+        fi
+      SHELL
+    else
+      <<~SHELL
         cd #{escaped_root}
         if gh release view #{escaped_tag} >/dev/null 2>&1; then
           gh release upload #{escaped_tag} \
@@ -60,6 +89,34 @@ platform :mac do
             --notes-file #{Shellwords.escape(notes_path)}
         fi
       SHELL
+    end
+
+    ENV["VERSION"] = version
+    ENV["APP_VERSION"] = version
+    shared_macos_developer_id(
+      app_identifiers: ["com.omzcj.minitools"],
+      validation_command: "cd #{escaped_root} && bash -n Scripts/*.sh && swift test",
+      package_command: "cd #{escaped_root} && APP_BUILD=#{escaped_build_version} Scripts/package-release.sh #{escaped_version}",
+      notarize_command: "cd #{escaped_root} && Scripts/notarize-release.sh #{escaped_version}",
+      release_command: release_command,
+      publish: publish
     )
+end
+
+platform :mac do
+  desc "Build, sign, notarize, and optionally publish miniTools"
+  lane :release do
+    _, _, expected_tag = mini_tools_release_context(channel: :stable)
+    tag = ENV["GITHUB_REF_NAME"].to_s
+    if ENV["GITHUB_EVENT_NAME"] == "push"
+      UI.user_error!("Tag #{tag} does not match #{expected_tag}") unless tag == expected_tag
+    end
+    mini_tools_package(channel: :stable, publish: ENV["APPLE_CI_PUBLISH"])
+  end
+
+  desc "Build, sign, notarize, and publish an immutable beta candidate"
+  lane :beta do
+    UI.user_error!("Beta publishing requires workflow_dispatch") unless ENV["GITHUB_EVENT_NAME"] == "workflow_dispatch"
+    mini_tools_package(channel: :beta, publish: true)
   end
 end

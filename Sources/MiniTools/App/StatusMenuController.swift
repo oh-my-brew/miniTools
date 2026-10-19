@@ -5,6 +5,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     var onOpenPanel: (() -> Void)?
     var onOpenClipboardHistory: (() -> Void)?
     var onCheckForUpdates: (() -> Void)?
+    var onCheckForBetaUpdates: (() -> Void)?
     var onOpenSettings: (() -> Void)?
     var onToggleClosedLidRunning: (() -> Void)?
     var onMenuWillOpen: (() -> Void)?
@@ -13,6 +14,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     static let clipboardHistoryTitle = "剪贴板历史"
     static let closedLidRunningTitle = "合盖运行"
     static let checkForUpdatesTitle = "检查更新…"
+    static let checkForBetaUpdatesTitle = "检查 Beta 更新…"
 
     private var statusItem: NSStatusItem?
     private var panelItem: NSMenuItem?
@@ -66,6 +68,15 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         checkForUpdatesItem.target = self
         checkForUpdatesItem.image = menuIcon(systemName: "arrow.triangle.2.circlepath")
         menu.addItem(checkForUpdatesItem)
+
+        let checkForBetaUpdatesItem = NSMenuItem(
+            title: Self.checkForBetaUpdatesTitle,
+            action: #selector(checkForBetaUpdates),
+            keyEquivalent: ""
+        )
+        checkForBetaUpdatesItem.target = self
+        checkForBetaUpdatesItem.image = menuIcon(systemName: "flask")
+        menu.addItem(checkForBetaUpdatesItem)
 
         let settingsItem = NSMenuItem(
             title: "设置…",
@@ -140,6 +151,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     @objc private func checkForUpdates() {
         onCheckForUpdates?()
+    }
+
+    @objc private func checkForBetaUpdates() {
+        onCheckForBetaUpdates?()
     }
 
     @objc private func toggleClosedLidRunning() {

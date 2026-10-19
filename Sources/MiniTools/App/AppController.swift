@@ -111,7 +111,10 @@ final class AppController: NSObject {
             self?.showSettings()
         }
         statusMenuController.onCheckForUpdates = { [weak self] in
-            self?.appUpdateController.checkForUpdates()
+            self?.appUpdateController.checkForUpdates(channel: .stable)
+        }
+        statusMenuController.onCheckForBetaUpdates = { [weak self] in
+            self?.appUpdateController.checkForUpdates(channel: .beta)
         }
         statusMenuController.onToggleClosedLidRunning = { [weak self] in
             guard let self else { return }

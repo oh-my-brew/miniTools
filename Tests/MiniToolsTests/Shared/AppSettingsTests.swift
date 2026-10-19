@@ -290,6 +290,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(StatusMenuController.toolPanelTitle, "工具面板")
         XCTAssertEqual(StatusMenuController.closedLidRunningTitle, "合盖运行")
         XCTAssertEqual(StatusMenuController.checkForUpdatesTitle, "检查更新…")
+        XCTAssertEqual(StatusMenuController.checkForBetaUpdatesTitle, "检查 Beta 更新…")
     }
 
     @MainActor

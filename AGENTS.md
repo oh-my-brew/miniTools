@@ -197,21 +197,23 @@ git diff --check
 ## 版本与 GitHub Release
 
 - `Support/Info.plist` 的展示版本使用完整的 `YYYY.MM.DD.N`。
-- Git 标签使用 `vYYYY.MM.DD.N`；GitHub Release 产物和 Homebrew Cask 使用不带 `v` 的 `YYYY.MM.DD.N`，同一天从 `1` 开始递增。
-- `.github/workflows/ci.yml` 负责 push、PR 和手动 CI；`.github/workflows/release.yml` 只由 `v*` 标签触发，并校验标签日期与 Info.plist 一致。
+- 正式 Git 标签使用 `vYYYY.MM.DD.N`；候选标签使用 `vYYYY.MM.DD.N-beta.RUN_NUMBER`。正式 Release 产物和 Homebrew Cask 使用不带 `v` 的四段版本，同一天从 `1` 开始递增。
+- `.github/workflows/ci.yml` 负责 push、PR 和手动 CI；`.github/workflows/beta.yml` 只允许手动派发并锁定准确源码 commit；`.github/workflows/promote.yml` 只把用户批准的同一候选 ZIP 提升为正式版；`.github/workflows/release.yml` 仅保留不发布的签名/公证手动诊断入口。
 - `.github/workflows/codeql.yml` 负责 code scanning，仓库已关闭 CodeQL default setup：`actions` 和 `ruby` 在 push、PR 和定时任务上运行；Swift 提取器要先完整构建一遍工程（实测 13–18 分钟），只在每周定时、手动触发和合并后的推送里运行，PR 上跳过，不要改回让每次 PR 都跑 Swift。
-- 正常顺序是：更新展示版本并提交 → 推送 → 等待 CI 成功 → 创建带注释标签并推送 → 等待 Release、签名 appcast 和全部资产完成。
+- 正常顺序是：开发代码进入 `master` 且 CI 成功 → Beta Release subagent 在独立 worktree 创建版本候选 PR → 针对候选 commit 派发 beta workflow → 用户通过“检查 Beta 更新…”体验 → 用户明确批准 → Promote subagent 合并版本 PR、给候选 commit 创建签名正式标签并派发 promote workflow。正式版复用候选 ZIP 和 SHA，不重新构建或公证。
 - Release 完成即为产品发行完成，不等待 Homebrew Tap，不触发 Autobump，也不安装三台设备。
 - Homebrew Tap 每日定时发现 Release 并创建 PR；检查、合并和 Homebrew 升级属于独立维护流程。
 
-### 开发完成后的发行
+### 开发完成后的候选与正式提升
 
-- 用户已决定：正常开发任务的代码进入 `master` 且源码 CI 通过后，自动创建一个新的 Release subagent；用户明确说“只开发”或“不要发布”时除外。
-- 不使用固定历史会话。Release subagent 只接收产品名、准确源码 commit、变更摘要、自动化检查和未验证项，并使用独立 Git worktree。
-- Release subagent 先确认没有同产品发行正在进行，再按 `DISTRIBUTION.md` 完成版本 PR、签名 tag、Developer ID 签名、公证、GitHub Release 和签名 appcast；主会话保持可继续响应其他任务。
+- 用户已决定：正常开发任务的代码进入 `master` 且源码 CI 通过后，开发主会话启动新的后台 Beta Release subagent；用户明确说“只开发”或“不要发布”时除外。主会话不得同步轮询或等待该 subagent，可立即继续响应其他任务。
+- 不使用固定历史会话。Beta Release subagent 只接收产品名、准确源码 commit、变更摘要、自动化检查和未验证项，在独立 Git worktree 中确认没有其他发行进行，再创建只含 `Support/Info.plist` 展示版本字段的单一候选 commit，并以该准确 commit 派发 `.github/workflows/beta.yml`。候选的父提交必须已经位于远端默认分支；preflight 在进入任何持有签名凭据的 job 前拒绝 workflow、Fastfile、源码或其他混入改动。
+- Beta Release subagent 等待并验证 CI 测试、Developer ID 签名、公证、不可变 prerelease、ZIP SHA 和 beta appcast；成功后只报告候选标签、源码 commit、ZIP SHA 与尚未验证的运行时行为。失败不得创建正式标签或自动提升。
+- 用户通过状态菜单“检查 Beta 更新…”完成真实体验。只有用户明确表示该候选可以正式发布后，主会话才启动另一个后台 Promote subagent；主会话同样不等待。
+- Promote subagent 锁定用户批准的候选标签和 ZIP SHA，先让原候选 commit 进入远端默认分支，再为该 commit 创建并推送签名 `vYYYY.MM.DD.N` 标签，最后派发 `.github/workflows/promote.yml`。批准可以跨天完成；Workflow 必须重新校验默认分支包含候选 commit、候选 prerelease、签名标签、commit、ZIP SHA、Developer ID、Gatekeeper、公证 ticket 与 arm64 架构，然后从同一 ZIP 生成稳定 appcast；不得重新构建或公证。
+- `beta` 是可移动的 feed 标签，只承载最新 `appcast-beta.xml`；每个 `v…-beta.RUN_NUMBER` 候选 Release 不可覆盖。候选均标记为 prerelease，不得成为 GitHub Latest，也不得进入 Homebrew livecheck。
 - 产品 Release 完整验证后停止，不读取或修改 Homebrew Tap，不等待定时 Autobump。
-- 如果无法创建 subagent、发行状态冲突或需要用户处理权限，停止自动链路并报告；不在开发主会话中执行长时间发行。
-- 上述自动产品发行是用户确认的默认工作流；版本冲突、签名/凭据失败、需要改变发行范围或工作流安全检查失败时再请求用户处理。
+- 如果无法创建 subagent、发行状态冲突或需要用户处理权限，停止自动链路并报告；不在开发主会话中接手长时间发行。暂不发送飞书发布通知。
 
 完整发行命令、Gatekeeper 限制和公开发行检查见 `DISTRIBUTION.md`。
 
