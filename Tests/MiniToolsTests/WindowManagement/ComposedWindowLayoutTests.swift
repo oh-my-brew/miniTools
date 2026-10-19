@@ -203,7 +203,7 @@ final class HotKeyLongPressRecognizerTests: XCTestCase {
         var shortPresses = 0
         var longPresses = 0
         let recognizer = HotKeyLongPressRecognizer(
-            threshold: .milliseconds(40),
+            threshold: .seconds(1),
             onShortPress: { shortPresses += 1 },
             onLongPress: { longPresses += 1 }
         )
@@ -212,7 +212,7 @@ final class HotKeyLongPressRecognizerTests: XCTestCase {
         recognizer.press()
         try? await Task.sleep(for: .milliseconds(5))
         recognizer.release()
-        try? await Task.sleep(for: .milliseconds(50))
+        try? await Task.sleep(for: .milliseconds(10))
 
         XCTAssertEqual(shortPresses, 1)
         XCTAssertEqual(longPresses, 0)

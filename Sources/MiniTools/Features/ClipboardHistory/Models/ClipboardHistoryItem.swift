@@ -11,7 +11,7 @@ enum ClipboardHistoryKind: String, Codable, Sendable {
     var title: String {
         switch self {
         case .text: "文本"
-        case .richText: "富文本"
+        case .richText: "文本"
         case .link: "链接"
         case .color: "颜色"
         case .image: "图片"
@@ -81,6 +81,11 @@ struct ClipboardHistoryCapturedRepresentation: Sendable {
     let itemIndex: Int
     let typeIdentifier: String
     let data: Data
+}
+
+struct ClipboardHistoryRichTextPayload: Sendable {
+    let data: Data
+    let typeIdentifier: String
 }
 
 struct ClipboardHistoryCapture: Sendable {

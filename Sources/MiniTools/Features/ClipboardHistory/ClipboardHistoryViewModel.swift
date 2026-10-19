@@ -14,6 +14,7 @@ final class ClipboardHistoryViewModel: ObservableObject {
     @Published var isSearchEditing = false
     @Published private(set) var message: String?
     @Published private(set) var thumbnails: [UUID: Data] = [:]
+    @Published private(set) var richTextPreviews: [UUID: AttributedString] = [:]
     @Published private(set) var searchFocusRequestID = 0
 
     private let store: ClipboardHistoryStore
@@ -38,7 +39,7 @@ final class ClipboardHistoryViewModel: ObservableObject {
                 let loaded = try await store.loadItems(retention: retention)
                 items = loaded
                 normalizeSelection()
-                await loadVisibleThumbnails()
+                await loadVisiblePreviews()
             } catch {
                 message = error.localizedDescription
             }
@@ -56,10 +57,17 @@ final class ClipboardHistoryViewModel: ObservableObject {
                 let duplicate = items.first(where: { $0.contentHash == capture.item.contentHash })
                 let shouldSelectSavedItem = duplicate == nil || selectedID == duplicate?.id
                 let saved = try await store.save(capture, replacing: duplicate)
+                if let duplicate {
+                    thumbnails[duplicate.id] = nil
+                    richTextPreviews[duplicate.id] = nil
+                }
                 items = try await store.loadItems(retention: retention)
                 if shouldSelectSavedItem { selectedID = saved.id }
                 if let thumbnail = await store.thumbnailData(for: saved) {
                     thumbnails[saved.id] = thumbnail
+                }
+                if let richText = await store.richTextPayload(for: saved) {
+                    richTextPreviews[saved.id] = Self.attributedString(from: richText)
                 }
             } catch {
                 message = error.localizedDescription
@@ -124,6 +132,7 @@ final class ClipboardHistoryViewModel: ObservableObject {
                 try await store.delete(item)
                 items.removeAll { $0.id == item.id }
                 thumbnails[item.id] = nil
+                richTextPreviews[item.id] = nil
                 normalizeSelection()
             } catch {
                 message = error.localizedDescription
@@ -135,6 +144,7 @@ final class ClipboardHistoryViewModel: ObservableObject {
         try await store.deleteAll()
         items = []
         thumbnails = [:]
+        richTextPreviews = [:]
         selectedID = nil
     }
 
@@ -148,12 +158,44 @@ final class ClipboardHistoryViewModel: ObservableObject {
         selectedID = visible.first?.id
     }
 
-    private func loadVisibleThumbnails() async {
-        for item in items.prefix(40) where item.thumbnailFileName != nil {
-            if let data = await store.thumbnailData(for: item) {
+    private func loadVisiblePreviews() async {
+        for item in items.prefix(40) {
+            if item.thumbnailFileName != nil,
+               let data = await store.thumbnailData(for: item) {
                 thumbnails[item.id] = data
             }
+            if item.kind == .richText,
+               let payload = await store.richTextPayload(for: item),
+               let attributed = Self.attributedString(from: payload) {
+                richTextPreviews[item.id] = attributed
+            }
         }
+    }
+
+    private static func attributedString(
+        from payload: ClipboardHistoryRichTextPayload
+    ) -> AttributedString? {
+        let documentType: NSAttributedString.DocumentType =
+            payload.typeIdentifier == NSPasteboard.PasteboardType.rtf.rawValue ? .rtf : .html
+        guard let source = try? NSAttributedString(
+            data: payload.data,
+            options: [.documentType: documentType],
+            documentAttributes: nil
+        ) else { return nil }
+
+        let normalized = NSMutableAttributedString(attributedString: source)
+        let range = NSRange(location: 0, length: normalized.length)
+        normalized.removeAttribute(.foregroundColor, range: range)
+        normalized.enumerateAttribute(.font, in: range) { value, range, _ in
+            guard let font = value as? NSFont else { return }
+            let size = min(max(font.pointSize, 13), 18)
+            normalized.addAttribute(
+                .font,
+                value: NSFontManager.shared.convert(font, toSize: size),
+                range: range
+            )
+        }
+        return AttributedString(normalized)
     }
 
     nonisolated static func matches(_ item: ClipboardHistoryItem, query: String) -> Bool {

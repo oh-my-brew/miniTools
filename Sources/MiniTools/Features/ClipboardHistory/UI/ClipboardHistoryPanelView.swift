@@ -1,21 +1,35 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum ClipboardHistoryPanelMetrics {
-    static let height: CGFloat = 244
+    static let height: CGFloat = 320
     static let screenInset: CGFloat = 12
     static let bottomInset: CGFloat = 12
     static let headerHeight: CGFloat = 48
-    static let cardWidth: CGFloat = 190
-    static let cardHeight: CGFloat = 166
+    static let cardWidth: CGFloat = 236
+    static let cardHeight: CGFloat = 236
     static let cardSpacing: CGFloat = 14
     static let cornerRadius: CGFloat = 22
+}
+
+private enum ClipboardHistoryPanelCoordinateSpace {
+    static let name = "ClipboardHistoryPanel"
+}
+
+private struct SelectedClipboardCardFramePreferenceKey: PreferenceKey {
+    static let defaultValue: CGRect? = nil
+
+    static func reduce(value: inout CGRect?, nextValue: () -> CGRect?) {
+        if let next = nextValue() { value = next }
+    }
 }
 
 struct ClipboardHistoryPanelView: View {
     @ObservedObject var viewModel: ClipboardHistoryViewModel
     let onPaste: (ClipboardHistoryItem, Bool) -> Void
     let onOpenSettings: () -> Void
+    let onSelectedCardFrameChange: (CGRect?) -> Void
 
     @FocusState private var searchFocused: Bool
 
@@ -26,47 +40,67 @@ struct ClipboardHistoryPanelView: View {
         }
         .padding(10)
         .featurePanelSurface(cornerRadius: ClipboardHistoryPanelMetrics.cornerRadius)
+        .coordinateSpace(name: ClipboardHistoryPanelCoordinateSpace.name)
         .onAppear { searchFocused = true }
         .onChange(of: viewModel.searchFocusRequestID) { _, _ in searchFocused = true }
+        .onPreferenceChange(SelectedClipboardCardFramePreferenceKey.self) {
+            onSelectedCardFrameChange($0)
+        }
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("搜索剪贴板历史", text: $viewModel.query)
-                    .textFieldStyle(.plain)
-                    .focused($searchFocused)
-            }
-            .padding(.horizontal, 14)
-            .frame(maxWidth: 360, minHeight: 38)
-            .featurePanelGlassControl(in: Capsule())
+        ZStack {
+            HStack(spacing: 12) {
+                searchControl
 
-            Label("剪贴板历史记录", systemImage: "clock.arrow.circlepath")
-                .font(.system(size: 14, weight: .semibold))
-                .padding(.horizontal, 15)
-                .frame(height: 38)
-                .featurePanelGlassControl(selected: true, in: Capsule())
-
-            Spacer()
-
-            if let message = viewModel.message {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                Label("剪贴板历史记录", systemImage: "clock.arrow.circlepath")
+                    .font(.system(size: 14, weight: .semibold))
+                    .padding(.horizontal, 15)
+                    .frame(height: 38)
+                    .featurePanelGlassControl(selected: true, in: Capsule())
             }
 
-            Button(action: onOpenSettings) {
-                Image(systemName: "ellipsis")
-                    .frame(width: 38, height: 38)
+            HStack {
+                if let message = viewModel.message {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .frame(maxWidth: 360, alignment: .leading)
+                }
+                Spacer()
+                Button(action: onOpenSettings) {
+                    Image(systemName: "ellipsis")
+                        .frame(width: 38, height: 38)
+                }
+                .buttonStyle(.plain)
+                .featurePanelGlassControl(in: Circle())
+                .help("剪贴板历史设置")
             }
-            .buttonStyle(.plain)
-            .featurePanelGlassControl(in: Circle())
-            .help("剪贴板历史设置")
         }
         .frame(height: ClipboardHistoryPanelMetrics.headerHeight)
+    }
+
+    private var searchControl: some View {
+        let expanded = viewModel.isSearchEditing || !viewModel.query.isEmpty
+
+        return HStack(spacing: expanded ? 8 : 0) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+            TextField("搜索剪贴板历史", text: $viewModel.query)
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+                .frame(width: expanded ? 294 : 0)
+                .opacity(expanded ? 1 : 0)
+                .allowsHitTesting(expanded)
+        }
+        .padding(.horizontal, expanded ? 14 : 10)
+        .frame(width: expanded ? 350 : 38, height: 38)
+        .contentShape(Capsule())
+        .featurePanelGlassControl(in: Capsule())
+        .onTapGesture { viewModel.focusSearch() }
+        .animation(.easeOut(duration: 0.12), value: expanded)
     }
 
     private var timeline: some View {
@@ -109,9 +143,16 @@ struct ClipboardHistoryPanelView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.kind.title)
                         .font(.system(size: 14, weight: .bold))
-                    Text(item.copiedAt, style: .relative)
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        Text(
+                            ClipboardHistoryRelativeTimeFormatter.string(
+                                from: item.copiedAt,
+                                relativeTo: context.date
+                            )
+                        )
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 if number <= 9 {
@@ -121,7 +162,7 @@ struct ClipboardHistoryPanelView: View {
                 }
                 sourceApplicationIcon(item)
             }
-            .padding(12)
+            .padding(14)
             .background(cardHeaderColor(item))
 
             cardContent(item)
@@ -139,6 +180,16 @@ struct ClipboardHistoryPanelView: View {
                     item.id == viewModel.selectedID ? Color.accentColor : Color.white.opacity(0.12),
                     lineWidth: item.id == viewModel.selectedID ? 2 : 0.5
                 )
+        }
+        .background {
+            if item.id == viewModel.selectedID {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: SelectedClipboardCardFramePreferenceKey.self,
+                        value: proxy.frame(in: .named(ClipboardHistoryPanelCoordinateSpace.name))
+                    )
+                }
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { onPaste(item, false) }
@@ -162,6 +213,44 @@ struct ClipboardHistoryPanelView: View {
                             .padding(7)
                     }
                 }
+        } else if item.kind == .richText,
+                  let attributed = viewModel.richTextPreviews[item.id] {
+            Text(attributed)
+                .font(.system(size: 15))
+                .foregroundStyle(.primary)
+                .lineLimit(9)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(14)
+        } else if item.kind == .link,
+                  let link = ClipboardHistoryLinkPresentation(text: item.plainText) {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(link.host, systemImage: "safari")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Text(link.title)
+                    .font(.system(size: 20, weight: .semibold))
+                    .lineLimit(4)
+                Spacer(minLength: 4)
+                Text(link.displayURL)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(14)
+        } else if item.kind == .files {
+            VStack(spacing: 12) {
+                Image(nsImage: NSWorkspace.shared.icon(for: contentType(item.summary)))
+                    .resizable()
+                    .frame(width: 72, height: 72)
+                Text(item.summary)
+                    .font(.system(size: 15, weight: .medium))
+                    .lineLimit(3)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(14)
         } else if item.kind == .color, let color = colorValue(item.plainText) {
             ZStack {
                 color
@@ -172,11 +261,11 @@ struct ClipboardHistoryPanelView: View {
             }
         } else {
             Text(item.summary)
-                .font(.system(size: 13))
+                .font(.system(size: 15))
                 .foregroundStyle(.primary)
-                .lineLimit(5)
+                .lineLimit(9)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(12)
+                .padding(14)
         }
     }
 
@@ -186,13 +275,18 @@ struct ClipboardHistoryPanelView: View {
            let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
             Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
                 .resizable()
-                .frame(width: 24, height: 24)
+                .frame(width: 36, height: 36)
                 .help(item.sourceApplicationName ?? bundleIdentifier)
         } else {
             Image(systemName: "app")
-                .frame(width: 24, height: 24)
+                .frame(width: 36, height: 36)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private func contentType(_ value: String) -> UTType {
+        let pathExtension = (value as NSString).pathExtension
+        return UTType(filenameExtension: pathExtension) ?? .data
     }
 
     private func cardHeaderColor(_ item: ClipboardHistoryItem) -> Color {

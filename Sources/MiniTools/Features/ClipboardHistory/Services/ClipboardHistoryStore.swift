@@ -85,6 +85,22 @@ actor ClipboardHistoryStore {
         return try? Data(contentsOf: itemDirectory(item.id).appendingPathComponent(fileName))
     }
 
+    func richTextPayload(for item: ClipboardHistoryItem) -> ClipboardHistoryRichTextPayload? {
+        guard item.kind == .richText,
+              let representation = item.representations.first(where: {
+                  $0.typeIdentifier == NSPasteboard.PasteboardType.rtf.rawValue
+                      || $0.typeIdentifier == NSPasteboard.PasteboardType.html.rawValue
+              }),
+              let data = try? Data(
+                  contentsOf: itemDirectory(item.id)
+                      .appendingPathComponent(representation.fileName)
+              ) else { return nil }
+        return ClipboardHistoryRichTextPayload(
+            data: data,
+            typeIdentifier: representation.typeIdentifier
+        )
+    }
+
     func previewURL(for item: ClipboardHistoryItem) throws -> URL? {
         if item.kind == .files,
            let payload = try payloads(for: item).first(where: {

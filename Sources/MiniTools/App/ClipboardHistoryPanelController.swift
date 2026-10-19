@@ -1,12 +1,10 @@
 import AppKit
 import Carbon
 import QuartzCore
-import QuickLookUI
 import SwiftUI
 
 @MainActor
-final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate,
-    @preconcurrency QLPreviewPanelDataSource, QLPreviewPanelDelegate {
+final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate {
     var onOpenSettings: (() -> Void)?
 
     private let settings: AppSettings
@@ -14,7 +12,11 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate,
     private let monitor: ClipboardHistoryMonitor
     private let eventPoster: ClipboardHistoryEventPosting
     private var previousApplication: NSRunningApplication?
-    private var previewURL: URL?
+    private let previewPanelController = ClipboardHistoryPreviewPanelController()
+    private var selectedCardFrame: CGRect?
+    private var previewTask: Task<Void, Never>?
+    private var previewedItemID: UUID?
+    private var sessionGeneration = 0
     private var isClosing = false
 
     private lazy var viewModel = ClipboardHistoryViewModel(
@@ -73,16 +75,17 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate,
     }
 
     func show() {
+        sessionGeneration += 1
         rememberFrontmostApplication()
         positionPanel()
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        panel.alphaValue = reduceMotion ? 1 : 0
+        panel.alphaValue = reduceMotion ? 1 : 0.78
         panel.makeKeyAndOrderFront(nil)
         guard !reduceMotion else { return }
         let originalFrame = panel.frame
-        panel.setFrameOrigin(CGPoint(x: originalFrame.minX, y: originalFrame.minY - 10))
+        panel.setFrameOrigin(CGPoint(x: originalFrame.minX, y: originalFrame.minY - 4))
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.18
+            context.duration = 0.11
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
             panel.animator().setFrame(originalFrame, display: true)
@@ -92,10 +95,10 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate,
     func close(restoreFocus: Bool) {
         guard !isClosing else { return }
         isClosing = true
-        if QLPreviewPanel.sharedPreviewPanelExists() {
-            QLPreviewPanel.shared()?.orderOut(nil)
-        }
-        previewURL = nil
+        sessionGeneration += 1
+        previewTask?.cancel()
+        previewTask = nil
+        closePreview()
         panel.orderOut(nil)
         if restoreFocus { previousApplication?.activate(options: []) }
         previousApplication = nil
@@ -126,7 +129,10 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate,
                 onPaste: { [weak self] item, plainTextOnly in
                     self?.perform(item: item, plainTextOnly: plainTextOnly, shouldPaste: true)
                 },
-                onOpenSettings: { [weak self] in self?.onOpenSettings?() }
+                onOpenSettings: { [weak self] in self?.onOpenSettings?() },
+                onSelectedCardFrameChange: { [weak self] frame in
+                    self?.selectedCardFrameDidChange(frame)
+                }
             )
         )
         return panel
@@ -136,13 +142,13 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate,
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) })
             ?? NSScreen.main
-        guard let visibleFrame = screen?.visibleFrame else { return }
+        guard let screenFrame = screen?.frame else { return }
         let inset = ClipboardHistoryPanelMetrics.screenInset
         panel.setFrame(
             NSRect(
-                x: visibleFrame.minX + inset,
-                y: visibleFrame.minY + ClipboardHistoryPanelMetrics.bottomInset,
-                width: max(640, visibleFrame.width - inset * 2),
+                x: screenFrame.minX + inset,
+                y: screenFrame.minY + ClipboardHistoryPanelMetrics.bottomInset,
+                width: max(640, screenFrame.width - inset * 2),
                 height: ClipboardHistoryPanelMetrics.height
             ),
             display: true
@@ -167,6 +173,10 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate,
             return true
         }
         if event.keyCode == UInt16(kVK_Escape) {
+            if previewPanelController.isVisible {
+                closePreview()
+                return true
+            }
             if !viewModel.query.isEmpty || viewModel.isSearchEditing {
                 viewModel.clearSearch()
             } else {
@@ -205,7 +215,11 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate,
             return true
         }
         if event.keyCode == UInt16(kVK_Space), !viewModel.isSearchEditing {
-            showPreview()
+            if previewPanelController.isVisible {
+                closePreview()
+            } else {
+                showPreview()
+            }
             return true
         }
         if (event.keyCode == UInt16(kVK_Delete)
@@ -255,42 +269,67 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate,
     }
 
     private func showPreview() {
-        Task {
+        guard let requestedItemID = viewModel.selectedItem?.id else { return }
+        previewTask?.cancel()
+        let generation = sessionGeneration
+        previewTask = Task {
             do {
                 guard let url = try await viewModel.previewURL() else {
                     viewModel.showMessage("此内容无法预览")
                     return
                 }
-                previewURL = url
-                guard let quickLook = QLPreviewPanel.shared() else { return }
-                quickLook.dataSource = self
-                quickLook.delegate = self
-                quickLook.reloadData()
-                quickLook.makeKeyAndOrderFront(nil)
+                guard !Task.isCancelled,
+                      generation == sessionGeneration,
+                      panel.isVisible,
+                      viewModel.selectedItem?.id == requestedItemID else { return }
+                guard let item = viewModel.selectedItem,
+                      let screenFrame = panel.screen?.frame else { return }
+                previewedItemID = item.id
+                previewPanelController.show(
+                    url: url,
+                    item: item,
+                    anchorX: selectedCardScreenMidX,
+                    parentPanelTop: panel.frame.maxY,
+                    screenFrame: screenFrame
+                )
             } catch {
+                guard !Task.isCancelled, generation == sessionGeneration else { return }
                 viewModel.showMessage(error.localizedDescription)
             }
         }
     }
 
-    func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
-        previewURL == nil ? 0 : 1
+    private func closePreview() {
+        previewTask?.cancel()
+        previewTask = nil
+        previewedItemID = nil
+        previewPanelController.close()
     }
 
-    func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> QLPreviewItem! {
-        previewURL as NSURL?
+    private var selectedCardScreenMidX: CGFloat {
+        panel.frame.minX + (selectedCardFrame?.midX ?? panel.frame.width / 2)
     }
 
-    func previewPanelWillClose(_ panel: QLPreviewPanel!) {
-        previewURL = nil
-        self.panel.makeKeyAndOrderFront(nil)
+    private func selectedCardFrameDidChange(_ frame: CGRect?) {
+        selectedCardFrame = frame
+        if previewPanelController.isVisible,
+           previewedItemID != viewModel.selectedItem?.id {
+            closePreview()
+            showPreview()
+            return
+        }
+        guard let screenFrame = panel.screen?.frame else { return }
+        previewPanelController.reposition(
+            anchorX: selectedCardScreenMidX,
+            parentPanelTop: panel.frame.maxY,
+            screenFrame: screenFrame
+        )
     }
 
     func windowDidResignKey(_ notification: Notification) {
         guard !isClosing,
               let window = notification.object as? NSWindow,
-              window === panel,
-              previewURL == nil else { return }
+              window === panel else { return }
         close(restoreFocus: false)
     }
 
