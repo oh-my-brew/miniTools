@@ -8,16 +8,24 @@ spec.loader.exec_module(preflight)
 
 
 class CandidateLifecycleTests(unittest.TestCase):
-    def candidate(self, source='old', labels=None):
-        return dict(number=47, source=source, labels=labels or [])
+    def candidate(self, source='old', labels=None, version='2026.10.20.1'):
+        return dict(number=47, source=source, labels=labels or [], version=version)
 
     def test_supersedes_only_ancestor(self):
         self.assertEqual(preflight.decide('new', [self.candidate()], [], lambda a, b: True),
-                         dict(reuse=[], supersede=[47]))
+                         dict(reuse=[], supersede=[47], target_version='2026.10.20.1'))
 
     def test_same_source_reuses(self):
         self.assertEqual(preflight.decide('old', [self.candidate()], [], lambda a, b: False),
-                         dict(reuse=[47], supersede=[]))
+                         dict(reuse=[47], supersede=[], target_version='2026.10.20.1'))
+
+    def test_no_candidate_leaves_target_version_unallocated(self):
+        self.assertEqual(preflight.decide('new', [], [], lambda a, b: True),
+                         dict(reuse=[], supersede=[], target_version=None))
+
+    def test_multiple_target_versions_require_resolution(self):
+        with self.assertRaises(ValueError):
+            preflight.decide('new', [self.candidate(), self.candidate(version='2026.10.20.2')], [], lambda a, b: True)
 
     def test_approved_blocks_even_when_same_source(self):
         with self.assertRaises(ValueError):

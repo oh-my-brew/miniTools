@@ -5,6 +5,8 @@ Run from a fetched repository before creating a candidate. No signing credential
 """
 import argparse
 import json
+import plistlib
+import re
 import subprocess
 
 
@@ -33,7 +35,11 @@ def decide(source, candidates, active_runs, is_ancestor):
             raise ValueError(f"候选 #{candidate['number']} 的源码与目标分叉，需人工处理")
     if len(reusable) > 1:
         raise ValueError('同一源码存在多个候选，需人工处理')
-    return {'reuse': reusable, 'supersede': superseded}
+    versions = {candidate['version'] for candidate in candidates}
+    if len(versions) > 1:
+        raise ValueError('存在多个目标版本的候选，不能自动选择版本')
+    return {'reuse': reusable, 'supersede': superseded,
+            'target_version': next(iter(versions), None)}
 
 
 def main():
@@ -79,12 +85,16 @@ def main():
         files = command('git', 'diff', '--name-only', old_source, head).splitlines()
         if files != ['Support/Info.plist']:
             raise SystemExit(f"候选 #{pr['number']} 含非版本改动")
-        import plistlib
         before = plistlib.loads(subprocess.check_output(['git', 'show', f'{old_source}:Support/Info.plist']))
         after = plistlib.loads(subprocess.check_output(['git', 'show', f'{head}:Support/Info.plist']))
         if {key for key in before.keys() | after.keys() if before.get(key) != after.get(key)} != {'CFBundleShortVersionString'}:
             raise SystemExit(f"候选 #{pr['number']} 修改了非展示版本字段")
-        candidates.append({'number': pr['number'], 'source': old_source,
+        version = after['CFBundleShortVersionString']
+        if not re.fullmatch(r'[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[1-9][0-9]*', version):
+            raise SystemExit(f"候选 #{pr['number']} 的展示版本无效")
+        if command('git', 'ls-remote', '--tags', 'origin', f'refs/tags/v{version}'):
+            raise SystemExit(f'目标版本 {version} 已有正式标签，不能继续替代')
+        candidates.append({'number': pr['number'], 'source': old_source, 'version': version,
                            'labels': [label['name'] for label in pr['labels']]})
     plan = decide(source, candidates, active, ancestor)
     print(json.dumps({'source': source, **plan}, ensure_ascii=False))

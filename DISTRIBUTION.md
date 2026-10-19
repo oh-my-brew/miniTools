@@ -18,6 +18,12 @@ python3 Scripts/beta-preflight.py --source <完整开发源码SHA> --apply
 两条 workflow 共用 `product-release` concurrency，签名与提升不会并发。GitHub concurrency
 不保证 FIFO；重新开始任务必须重新检查目标源码，不能依赖旧计划。
 
+preflight 输出 `target_version` 时复用该目标四段版本，多个 Beta 仅以 `beta.RUN_NUMBER`
+及内部 `CFBundleVersion` 区分。正式发布前（包括跨日修复）不递增目标版本；正式发布后才
+分配下一版本。输出为空时按日期版本规则分配未占用版本，多个目标版本或已存在正式标签时停止。
+新候选分支可用 `release/miniTools-YYYY.MM.DD.N-<source-short-sha>`，不能强推改写旧候选提交。
+应用继续只展示四段版本，不增加构建号或 Beta 状态显示。
+
 1. 从远端默认分支中的准确开发 commit 创建单一候选 commit，只修改 `Support/Info.plist` 的 `CFBundleShortVersionString` 四段版本字段。
 2. 以候选 commit 派发 `Beta Candidate` workflow，并把同一 commit 作为 `source_commit` 输入。
 3. CI 运行测试，构建 arm64 主程序及 helper，完成 Developer ID 签名、Apple 公证、staple、Gatekeeper 和 SHA-256 校验。
@@ -30,7 +36,7 @@ python3 Scripts/beta-preflight.py --source <完整开发源码SHA> --apply
 ```bash
 candidate_commit="$(git rev-parse HEAD)"
 gh workflow run beta.yml \
-  --ref "release/miniTools-YYYY.MM.DD.N" \
+  --ref "release/miniTools-YYYY.MM.DD.N-<source-short-sha>" \
   -f "source_commit=$candidate_commit"
 ```
 
