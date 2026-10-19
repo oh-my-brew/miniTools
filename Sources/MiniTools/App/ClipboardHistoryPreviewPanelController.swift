@@ -5,11 +5,10 @@ import QuartzCore
 @MainActor
 final class ClipboardHistoryPreviewPanelController: NSObject {
     private enum Metrics {
-        static let pointerHeight: CGFloat = 12
+        static let pointerHeight = ClipboardHistoryPreviewShape.pointerHeight
         static let headerHeight: CGFloat = 48
         static let footerHeight: CGFloat = 34
         static let contentInset: CGFloat = 10
-        static let cornerRadius: CGFloat = 18
     }
 
     private let panel: NSPanel
@@ -215,11 +214,14 @@ final class ClipboardHistoryPreviewPanelController: NSObject {
 
     private func layoutContent(size: CGSize, pointerX: CGFloat) {
         container.frame = CGRect(origin: .zero, size: size)
-        let shape = panelShape(size: size, pointerX: pointerX)
+        let shape = ClipboardHistoryPreviewShape.path(size: size, pointerX: pointerX)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         maskLayer.frame = container.bounds
         maskLayer.path = shape
         borderLayer.frame = container.bounds
         borderLayer.path = shape
+        CATransaction.commit()
 
         let headerY = size.height - Metrics.headerHeight
         closeButton.frame = CGRect(x: 10, y: headerY + 11, width: 26, height: 26)
@@ -272,25 +274,4 @@ final class ClipboardHistoryPreviewPanelController: NSObject {
         colorFooterField.frame = textFooterField.frame
     }
 
-    private func panelShape(size: CGSize, pointerX: CGFloat) -> CGPath {
-        let pointerHalfWidth: CGFloat = 14
-        let clampedPointerX = min(max(pointerX, 32), size.width - 32)
-        let bodyRect = CGRect(
-            x: 0.5,
-            y: Metrics.pointerHeight,
-            width: size.width - 1,
-            height: size.height - Metrics.pointerHeight - 0.5
-        )
-        let path = CGMutablePath()
-        path.addRoundedRect(
-            in: bodyRect,
-            cornerWidth: Metrics.cornerRadius,
-            cornerHeight: Metrics.cornerRadius
-        )
-        path.move(to: CGPoint(x: clampedPointerX - pointerHalfWidth, y: Metrics.pointerHeight + 1))
-        path.addLine(to: CGPoint(x: clampedPointerX, y: 0.5))
-        path.addLine(to: CGPoint(x: clampedPointerX + pointerHalfWidth, y: Metrics.pointerHeight + 1))
-        path.closeSubpath()
-        return path
-    }
 }
