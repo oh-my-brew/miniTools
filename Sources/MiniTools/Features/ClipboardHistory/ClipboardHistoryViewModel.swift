@@ -16,6 +16,7 @@ final class ClipboardHistoryViewModel: ObservableObject {
     @Published private(set) var thumbnails: [UUID: Data] = [:]
     @Published private(set) var richTextPreviews: [UUID: AttributedString] = [:]
     @Published private(set) var searchFocusRequestID = 0
+    @Published private(set) var showsNumberShortcuts = false
 
     private let store: ClipboardHistoryStore
     private var retention: ClipboardHistoryRetention
@@ -102,6 +103,10 @@ final class ClipboardHistoryViewModel: ObservableObject {
     func focusSearch() {
         isSearchEditing = true
         searchFocusRequestID += 1
+    }
+
+    func updateCommandKey(isPressed: Bool) {
+        showsNumberShortcuts = isPressed
     }
 
     func focusResults() {

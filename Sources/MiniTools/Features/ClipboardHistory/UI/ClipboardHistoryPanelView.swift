@@ -9,6 +9,7 @@ enum ClipboardHistoryPanelMetrics {
     static let headerHeight: CGFloat = 48
     static let cardWidth: CGFloat = 236
     static let cardHeight: CGFloat = 236
+    static let cardHeaderHeight: CGFloat = 58
     static let cardSpacing: CGFloat = 14
     static let cornerRadius: CGFloat = 22
 }
@@ -124,7 +125,6 @@ struct ClipboardHistoryPanelView: View {
                         .padding(.horizontal, 2)
                     }
                     .scrollIndicators(.hidden)
-                    .scrollTargetBehavior(.viewAligned)
                     .onChange(of: viewModel.selectedID) { _, selectedID in
                         guard let selectedID else { return }
                         withAnimation(.easeOut(duration: 0.14)) {
@@ -139,10 +139,11 @@ struct ClipboardHistoryPanelView: View {
 
     private func clipboardCard(_ item: ClipboardHistoryItem, number: Int) -> some View {
         VStack(spacing: 0) {
-            HStack(alignment: .top, spacing: 8) {
+            HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.kind.title)
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
                     TimelineView(.periodic(from: .now, by: 60)) { context in
                         Text(
                             ClipboardHistoryRelativeTimeFormatter.string(
@@ -150,23 +151,25 @@ struct ClipboardHistoryPanelView: View {
                                 relativeTo: context.date
                             )
                         )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.75))
                     }
                 }
                 Spacer()
-                if number <= 9 {
-                    Text("⌘\(number)")
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.tertiary)
-                }
                 sourceApplicationIcon(item)
             }
-            .padding(14)
+            .padding(.leading, 14)
+            .padding(.trailing, 4)
+            .frame(height: ClipboardHistoryPanelMetrics.cardHeaderHeight)
             .background(cardHeaderColor(item))
 
             cardContent(item)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(
+                    width: ClipboardHistoryPanelMetrics.cardWidth,
+                    height: ClipboardHistoryPanelMetrics.cardHeight
+                        - ClipboardHistoryPanelMetrics.cardHeaderHeight
+                )
+                .clipped()
                 .background(Color(nsColor: .controlBackgroundColor).opacity(0.72))
         }
         .frame(
@@ -180,6 +183,13 @@ struct ClipboardHistoryPanelView: View {
                     item.id == viewModel.selectedID ? Color.accentColor : Color.white.opacity(0.12),
                     lineWidth: item.id == viewModel.selectedID ? 2 : 0.5
                 )
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if viewModel.showsNumberShortcuts, number <= 9 {
+                shortcutBadge(number)
+                    .padding(9)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            }
         }
         .background {
             if item.id == viewModel.selectedID {
@@ -275,13 +285,28 @@ struct ClipboardHistoryPanelView: View {
            let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
             Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
                 .resizable()
-                .frame(width: 36, height: 36)
+                .interpolation(.high)
+                .frame(width: 50, height: 50)
                 .help(item.sourceApplicationName ?? bundleIdentifier)
         } else {
             Image(systemName: "app")
-                .frame(width: 36, height: 36)
+                .font(.system(size: 25))
+                .frame(width: 50, height: 50)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private func shortcutBadge(_ number: Int) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "text.justify.leading")
+                .font(.system(size: 10, weight: .semibold))
+            Text("\(number)")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 7)
+        .frame(height: 22)
+        .background(.ultraThinMaterial, in: Capsule())
     }
 
     private func contentType(_ value: String) -> UTType {

@@ -176,6 +176,74 @@ final class ClipboardHistoryTests: XCTestCase {
         XCTAssertGreaterThan(longSize.height, shortSize.height)
     }
 
+    func testHorizontalScrollUsesVerticalDeltaAndClampsWithoutElasticOverscroll() {
+        XCTAssertEqual(
+            ClipboardHistoryHorizontalScrollBehavior.targetOffset(
+                current: 240,
+                delta: -80,
+                contentWidth: 1_200,
+                viewportWidth: 600
+            ),
+            320
+        )
+        XCTAssertEqual(
+            ClipboardHistoryHorizontalScrollBehavior.targetOffset(
+                current: 20,
+                delta: 100,
+                contentWidth: 1_200,
+                viewportWidth: 600
+            ),
+            0
+        )
+        XCTAssertEqual(
+            ClipboardHistoryHorizontalScrollBehavior.targetOffset(
+                current: 580,
+                delta: -100,
+                contentWidth: 1_200,
+                viewportWidth: 600
+            ),
+            600
+        )
+    }
+
+    func testFirstComposedTextKeyExpandsSearchBeforeQueryCommits() {
+        XCTAssertTrue(
+            ClipboardHistoryInputBehavior.shouldExpandSearch(
+                characters: "n",
+                modifiers: []
+            )
+        )
+        XCTAssertTrue(
+            ClipboardHistoryInputBehavior.shouldExpandSearch(
+                characters: "你",
+                modifiers: []
+            )
+        )
+        XCTAssertFalse(
+            ClipboardHistoryInputBehavior.shouldExpandSearch(
+                characters: "1",
+                modifiers: [.command]
+            )
+        )
+    }
+
+    @MainActor
+    func testCommandShortcutVisibilityFollowsModifierState() {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ClipboardHistoryViewModelTests.\(UUID())", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let viewModel = ClipboardHistoryViewModel(
+            store: ClipboardHistoryStore(rootURL: root),
+            retention: .oneMonth
+        )
+
+        XCTAssertFalse(viewModel.showsNumberShortcuts)
+        viewModel.updateCommandKey(isPressed: true)
+        XCTAssertTrue(viewModel.showsNumberShortcuts)
+        viewModel.updateCommandKey(isPressed: false)
+        XCTAssertFalse(viewModel.showsNumberShortcuts)
+    }
+
     private func makeCapture(text: String, date: Date) -> ClipboardHistoryCapture {
         let id = UUID()
         let representation = ClipboardHistoryRepresentation(
