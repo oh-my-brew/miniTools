@@ -1,6 +1,32 @@
 import AppKit
 import Foundation
 
+enum ClipboardHistoryHorizontalScrollBehavior {
+    static func targetOffset(
+        current: CGFloat,
+        delta: CGFloat,
+        contentWidth: CGFloat,
+        viewportWidth: CGFloat
+    ) -> CGFloat {
+        let maximum = max(0, contentWidth - viewportWidth)
+        return min(max(current - delta, 0), maximum)
+    }
+}
+
+enum ClipboardHistoryInputBehavior {
+    static func shouldExpandSearch(
+        characters: String?,
+        modifiers: NSEvent.ModifierFlags
+    ) -> Bool {
+        let modifiers = modifiers.intersection(.deviceIndependentFlagsMask)
+        guard !modifiers.contains(.command), !modifiers.contains(.control),
+              let characters, !characters.isEmpty else { return false }
+        return characters.unicodeScalars.contains(where: {
+            !CharacterSet.controlCharacters.contains($0)
+        })
+    }
+}
+
 enum ClipboardHistoryRelativeTimeFormatter {
     static func string(from date: Date, relativeTo now: Date = Date()) -> String {
         let elapsed = max(0, now.timeIntervalSince(date))

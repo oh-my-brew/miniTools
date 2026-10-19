@@ -76,6 +76,7 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate {
 
     func show() {
         sessionGeneration += 1
+        viewModel.updateCommandKey(isPressed: false)
         rememberFrontmostApplication()
         positionPanel()
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -123,6 +124,10 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate {
         panel.animationBehavior = .none
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         panel.keyHandler = { [weak self] event in self?.handleKeyEvent(event) ?? false }
+        panel.modifierHandler = { [weak self] modifiers in
+            self?.viewModel.updateCommandKey(isPressed: modifiers.contains(.command))
+        }
+        panel.scrollHandler = { [weak self] event in self?.handleScrollEvent(event) ?? false }
         panel.contentView = TransparentHostingView(
             rootView: ClipboardHistoryPanelView(
                 viewModel: viewModel,
@@ -227,7 +232,52 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate {
             viewModel.deleteSelection()
             return true
         }
+        if isTextInputEvent(event) {
+            viewModel.focusSearch()
+        }
         return false
+    }
+
+    private func isTextInputEvent(_ event: NSEvent) -> Bool {
+        ClipboardHistoryInputBehavior.shouldExpandSearch(
+            characters: event.characters,
+            modifiers: event.modifierFlags
+        )
+    }
+
+    private func handleScrollEvent(_ event: NSEvent) -> Bool {
+        guard let scrollView = findHorizontalScrollView(in: panel.contentView),
+              let documentView = scrollView.documentView else { return false }
+
+        scrollView.horizontalScrollElasticity = .none
+        scrollView.verticalScrollElasticity = .none
+        let rawDelta = abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY)
+            ? event.scrollingDeltaX
+            : event.scrollingDeltaY
+        let delta = event.hasPreciseScrollingDeltas ? rawDelta : rawDelta * 12
+        let clipView = scrollView.contentView
+        let targetX = ClipboardHistoryHorizontalScrollBehavior.targetOffset(
+            current: clipView.bounds.origin.x,
+            delta: delta,
+            contentWidth: documentView.bounds.width,
+            viewportWidth: clipView.bounds.width
+        )
+        clipView.scroll(to: CGPoint(x: targetX, y: clipView.bounds.origin.y))
+        scrollView.reflectScrolledClipView(clipView)
+        return true
+    }
+
+    private func findHorizontalScrollView(in view: NSView?) -> NSScrollView? {
+        guard let view else { return nil }
+        if let scrollView = view as? NSScrollView,
+           let documentView = scrollView.documentView,
+           documentView.bounds.width > scrollView.contentView.bounds.width {
+            return scrollView
+        }
+        for subview in view.subviews {
+            if let result = findHorizontalScrollView(in: subview) { return result }
+        }
+        return nil
     }
 
     private func number(for keyCode: UInt16) -> Int? {
