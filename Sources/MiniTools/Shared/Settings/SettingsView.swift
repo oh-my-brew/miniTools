@@ -198,6 +198,8 @@ private struct SettingsCategoryDetail: View {
     @ViewBuilder
     private var generalSettings: some View {
         Section("应用") {
+            LabeledContent("版本", value: AppVersion.displayName)
+                .textSelection(.enabled)
             Toggle(
                 "登录时启动 miniTools",
                 isOn: Binding(
