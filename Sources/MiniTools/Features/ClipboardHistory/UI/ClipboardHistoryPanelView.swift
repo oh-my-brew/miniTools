@@ -223,14 +223,6 @@ struct ClipboardHistoryPanelView: View {
                             .padding(7)
                     }
                 }
-        } else if item.kind == .richText,
-                  let attributed = viewModel.richTextPreviews[item.id] {
-            Text(attributed)
-                .font(.system(size: 15))
-                .foregroundStyle(.primary)
-                .lineLimit(9)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(14)
         } else if item.kind == .link,
                   let link = ClipboardHistoryLinkPresentation(text: item.plainText) {
             VStack(alignment: .leading, spacing: 8) {
@@ -271,7 +263,7 @@ struct ClipboardHistoryPanelView: View {
             }
         } else {
             Text(item.summary)
-                .font(.system(size: 15))
+                .font(.system(size: 15, weight: .regular, design: .default))
                 .foregroundStyle(.primary)
                 .lineLimit(9)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -281,13 +273,12 @@ struct ClipboardHistoryPanelView: View {
 
     @ViewBuilder
     private func sourceApplicationIcon(_ item: ClipboardHistoryItem) -> some View {
-        if let bundleIdentifier = item.sourceBundleIdentifier,
-           let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+        if let appearance = viewModel.applicationAppearance(for: item) {
+            Image(nsImage: appearance.icon)
                 .resizable()
                 .interpolation(.high)
                 .frame(width: 50, height: 50)
-                .help(item.sourceApplicationName ?? bundleIdentifier)
+                .help(item.sourceApplicationName ?? item.sourceBundleIdentifier ?? "")
         } else {
             Image(systemName: "app")
                 .font(.system(size: 25))
@@ -315,23 +306,14 @@ struct ClipboardHistoryPanelView: View {
     }
 
     private func cardHeaderColor(_ item: ClipboardHistoryItem) -> Color {
-        switch item.kind {
-        case .image: Color.red.opacity(0.78)
-        case .link: Color.blue.opacity(0.72)
-        case .color: Color.purple.opacity(0.7)
-        case .files: Color.orange.opacity(0.72)
-        case .text, .richText: Color.indigo.opacity(0.72)
+        guard let appearance = viewModel.applicationAppearance(for: item) else {
+            return Color(nsColor: ClipboardHistoryIconPalette.monochromeFallback.nsColor)
         }
+        return Color(nsColor: appearance.headerColor)
     }
 
     private func colorValue(_ value: String?) -> Color? {
-        guard var value else { return nil }
-        if value.hasPrefix("#") { value.removeFirst() }
-        guard value.count == 6, let number = Int(value, radix: 16) else { return nil }
-        return Color(
-            red: Double((number >> 16) & 0xff) / 255,
-            green: Double((number >> 8) & 0xff) / 255,
-            blue: Double(number & 0xff) / 255
-        )
+        guard let presentation = ClipboardHistoryColorPresentation(text: value) else { return nil }
+        return Color(nsColor: presentation.color.nsColor)
     }
 }

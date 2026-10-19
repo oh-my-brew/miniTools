@@ -324,9 +324,19 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate {
         let generation = sessionGeneration
         previewTask = Task {
             do {
-                guard let url = try await viewModel.previewURL() else {
-                    viewModel.showMessage("此内容无法预览")
-                    return
+                guard let requestedItem = viewModel.selectedItem else { return }
+                let usesCustomPreview = requestedItem.kind == .text
+                    || requestedItem.kind == .richText
+                    || requestedItem.kind == .color
+                let url: URL?
+                if usesCustomPreview {
+                    url = nil
+                } else {
+                    guard let previewURL = try await viewModel.previewURL() else {
+                        viewModel.showMessage("此内容无法预览")
+                        return
+                    }
+                    url = previewURL
                 }
                 guard !Task.isCancelled,
                       generation == sessionGeneration,

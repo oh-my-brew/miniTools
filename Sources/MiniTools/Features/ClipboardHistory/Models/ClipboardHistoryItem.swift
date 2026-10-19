@@ -83,11 +83,6 @@ struct ClipboardHistoryCapturedRepresentation: Sendable {
     let data: Data
 }
 
-struct ClipboardHistoryRichTextPayload: Sendable {
-    let data: Data
-    let typeIdentifier: String
-}
-
 struct ClipboardHistoryCapture: Sendable {
     var item: ClipboardHistoryItem
     let payloads: [ClipboardHistoryCapturedRepresentation]

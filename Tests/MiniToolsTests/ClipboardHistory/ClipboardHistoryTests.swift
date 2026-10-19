@@ -176,6 +176,47 @@ final class ClipboardHistoryTests: XCTestCase {
         XCTAssertGreaterThan(longSize.height, shortSize.height)
     }
 
+    func testColorPresentationMatchesPasteStyleMetadata() throws {
+        let presentation = try XCTUnwrap(ClipboardHistoryColorPresentation(text: "#125566"))
+
+        XCTAssertEqual(presentation.hex, "#125566")
+        XCTAssertEqual(presentation.rgbDescription, "RGB 18, 85, 102")
+        XCTAssertEqual(presentation.hslDescription, "HSL 192, 82, 24")
+        XCTAssertEqual(presentation.hsbDescription, "HSB 192, 82, 40")
+        XCTAssertEqual(presentation.foregroundColor, .white)
+    }
+
+    func testTextMetricsUseSystemWordBoundariesAndLineCount() {
+        let metrics = ClipboardHistoryTextMetrics(text: "hello world\n中文测试")
+
+        XCTAssertEqual(metrics.characters, 16)
+        XCTAssertEqual(metrics.words, 4)
+        XCTAssertEqual(metrics.lines, 2)
+        XCTAssertEqual(metrics.description, "16 个字符  ·  4 单词  ·  2 行")
+    }
+
+    func testIconPaletteUsesDominantSaturatedColorAndMonochromeFallback() {
+        let orange = ClipboardHistoryIconPalette.representativeColor(
+            samples: Array(
+                repeating: .init(red: 1, green: 0.45, blue: 0.05, alpha: 1),
+                count: 24
+            ) + Array(
+                repeating: .init(red: 1, green: 1, blue: 1, alpha: 1),
+                count: 8
+            )
+        )
+        XCTAssertGreaterThan(orange.red, orange.green)
+        XCTAssertGreaterThan(orange.green, orange.blue)
+
+        let monochrome = ClipboardHistoryIconPalette.representativeColor(
+            samples: Array(
+                repeating: .init(red: 0.1, green: 0.1, blue: 0.1, alpha: 1),
+                count: 24
+            )
+        )
+        XCTAssertEqual(monochrome, ClipboardHistoryIconPalette.monochromeFallback)
+    }
+
     func testHorizontalScrollUsesVerticalDeltaAndClampsWithoutElasticOverscroll() {
         XCTAssertEqual(
             ClipboardHistoryHorizontalScrollBehavior.targetOffset(
