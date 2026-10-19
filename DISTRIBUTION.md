@@ -41,6 +41,10 @@ gh workflow run beta.yml \
 ```
 
 Workflow 的 preflight 会要求 checkout、事件 `GITHUB_SHA` 和 `source_commit` 三者完全相同；候选必须是非 merge 的单一版本 commit，其父提交已经位于远端默认分支，且相对父提交只能修改 `Support/Info.plist` 的 `CFBundleShortVersionString`。这些检查在任何签名、公证凭据进入 job 前完成。
+独立打包 job 不继承 preflight 的完整 Git 历史。发布说明使用锁定 commit 对象的原始
+`parent` 字段读取来源 SHA（兼容 depth=1），同时校验 checkout SHA 和唯一父提交；不执行
+`HEAD^` 遍历，也不静默省略来源。preflight 的完整历史和版本隔离校验保持原要求。
+
 候选 PR 在体验期间保持打开，但 Open 本身不构成发行锁；beta 失败只修复候选流程或创建下一候选，不得创建正式标签。
 
 共享发布流程和 Fastlane lanes 来自 `oh-my-infra/apple-ci`；workflow 固定完整
