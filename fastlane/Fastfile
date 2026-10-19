@@ -42,7 +42,9 @@ def mini_tools_package(channel:, publish:)
     escaped_tag = Shellwords.escape(tag)
     notes_path = File.join(ENV.fetch("RUNNER_TEMP", Dir.tmpdir), "miniTools-#{channel}-release-notes.md")
     notes = if channel == :beta
-      "Beta candidate built from commit #{ENV.fetch('GITHUB_SHA', 'unknown')}. " \
+      "Source commit: #{sh("git -C #{escaped_root} rev-parse HEAD^", log: false).strip}\n" \
+        "Candidate commit: #{ENV.fetch('GITHUB_SHA', 'unknown')}\n" \
+        "Candidate tag: #{tag}\n\n" \
         "It is signed with Developer ID and notarized by Apple, but must not be promoted " \
         "without explicit user approval.\n"
     else

@@ -60,6 +60,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        menu.addItem(NSMenuItem(title: "miniTools \(AppVersion.displayName)", action: nil, keyEquivalent: ""))
+
         let checkForUpdatesItem = NSMenuItem(
             title: Self.checkForUpdatesTitle,
             action: #selector(checkForUpdates),
