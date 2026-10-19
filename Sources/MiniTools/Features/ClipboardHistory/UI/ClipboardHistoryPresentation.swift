@@ -80,11 +80,11 @@ enum ClipboardHistoryPreviewLayout {
             }
             return CGSize(width: max(340, size.width), height: max(240, size.height))
         case .richText:
-            return textSize(characterCount: item.summary.count, minimumHeight: 320)
+            return textSize(characterCount: item.plainText?.count ?? item.summary.count)
         case .text:
-            return textSize(characterCount: item.summary.count, minimumHeight: 260)
+            return textSize(characterCount: item.plainText?.count ?? item.summary.count)
         case .color:
-            return CGSize(width: 380, height: 260)
+            return CGSize(width: 560, height: 380)
         case .link:
             return CGSize(width: 500, height: 340)
         case .files:
@@ -92,14 +92,14 @@ enum ClipboardHistoryPreviewLayout {
         }
     }
 
-    private static func textSize(characterCount: Int, minimumHeight: CGFloat) -> CGSize {
+    private static func textSize(characterCount: Int) -> CGSize {
         switch characterCount {
         case ..<80:
-            return CGSize(width: 420, height: minimumHeight)
+            return CGSize(width: 560, height: 360)
         case ..<240:
-            return CGSize(width: 480, height: max(minimumHeight, 350))
+            return CGSize(width: 640, height: 420)
         default:
-            return CGSize(width: 520, height: 440)
+            return CGSize(width: 720, height: 500)
         }
     }
 
