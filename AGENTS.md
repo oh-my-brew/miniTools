@@ -216,6 +216,7 @@ git diff --check
 - 取代旧候选时不得强推或改写旧候选提交。为新源码创建独立 worktree、分支（例如 `release/miniTools-YYYY.MM.DD.N-<source-short-sha>`）和版本 commit，避免同版本旧分支名称冲突；Release/标签保持不可变。
 - 用户批准必须锁定候选标签、候选 commit 和 ZIP SHA；主会话在启动 Promote subagent **之前**，将批准证据和这三项记录在候选 PR 正文，并添加 `release-approved` 标签。该标签只记录已有明确授权，不能代替用户批准。此后旧候选受保护，preflight 不得自动关闭；只有用户明确撤销批准才可移除保护。Promote 必须核对批准记录，已取代/关闭未合并的候选不得提升。
 - 候选 PR 与 Release 必须记录 `Source commit`（候选父提交）、`Candidate commit`、候选标签和 ZIP SHA，完成后补齐资产信息；主会话必须明确告知“源码已合并”和“候选已发布”是否分别完成，不能把旧 feed 当成新源码已交付。
+- 独立打包 job 可以使用 depth=1 浅克隆。发布说明的来源 SHA 从锁定候选 commit 对象的原始 `parent` 字段读取，并校验 checkout SHA 与唯一父提交；不得在打包 job 依赖 `HEAD^` 遍历或用 unknown 静默降级。完整历史的版本隔离/默认分支祖先检查仍由 preflight 执行，不能因浅克隆兼容而放宽。
 - Beta Release subagent 等待并验证 CI 测试、Developer ID 签名、公证、不可变 prerelease、ZIP SHA 和 beta appcast；成功后只报告候选标签、源码 commit、ZIP SHA 与尚未验证的运行时行为。失败不得创建正式标签或自动提升。
 - 用户通过状态菜单“检查 Beta 更新…”完成真实体验。只有用户明确表示该候选可以正式发布后，主会话才启动另一个后台 Promote subagent；主会话同样不等待。
 - Promote subagent 锁定用户批准的候选标签和 ZIP SHA，先让原候选 commit 进入远端默认分支，再为该 commit 创建并推送签名 `vYYYY.MM.DD.N` 标签，最后派发 `.github/workflows/promote.yml`。批准可以跨天完成；Workflow 必须重新校验默认分支包含候选 commit、候选 prerelease、签名标签、commit、ZIP SHA、Developer ID、Gatekeeper、公证 ticket 与 arm64 架构，然后从同一 ZIP 生成稳定 appcast；不得重新构建或公证。

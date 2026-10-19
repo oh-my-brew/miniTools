@@ -1,4 +1,6 @@
 require "shellwords"
+require "tmpdir"
+require_relative "release_metadata"
 
 import_from_git(
   url: "https://github.com/oh-my-infra/apple-ci.git",
@@ -42,8 +44,10 @@ def mini_tools_package(channel:, publish:)
     escaped_tag = Shellwords.escape(tag)
     notes_path = File.join(ENV.fetch("RUNNER_TEMP", Dir.tmpdir), "miniTools-#{channel}-release-notes.md")
     notes = if channel == :beta
-      "Source commit: #{sh("git -C #{escaped_root} rev-parse HEAD^", log: false).strip}\n" \
-        "Candidate commit: #{ENV.fetch('GITHUB_SHA', 'unknown')}\n" \
+      candidate_commit = ENV.fetch("GITHUB_SHA")
+      source_commit = MiniToolsReleaseMetadata.source_commit(root: root, candidate_commit: candidate_commit)
+      "Source commit: #{source_commit}\n" \
+        "Candidate commit: #{candidate_commit}\n" \
         "Candidate tag: #{tag}\n\n" \
         "It is signed with Developer ID and notarized by Apple, but must not be promoted " \
         "without explicit user approval.\n"
