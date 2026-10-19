@@ -97,6 +97,69 @@ final class ClipboardHistoryTests: XCTestCase {
         XCTAssertEqual(payloads.first?.data, Data("recent".utf8))
     }
 
+    func testPromotingUsedItemMovesItToFrontWithoutChangingPayload() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ClipboardHistoryTests.\(UUID())", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = ClipboardHistoryStore(rootURL: root)
+        let first = try await store.save(
+            makeCapture(text: "first", date: Date(timeIntervalSince1970: 100))
+        )
+        _ = try await store.save(
+            makeCapture(text: "second", date: Date(timeIntervalSince1970: 200))
+        )
+
+        _ = try await store.promote(first, at: Date(timeIntervalSince1970: 300))
+        let items = try await store.loadItems(retention: .forever)
+
+        XCTAssertEqual(items.map(\.plainText), ["first", "second"])
+        let payloads = try await store.payloads(for: try XCTUnwrap(items.first))
+        XCTAssertEqual(payloads.first?.data, Data("first".utf8))
+    }
+
+    func testStoreRecoversFileURLsForCardPresentation() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ClipboardHistoryTests.\(UUID())", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = ClipboardHistoryStore(rootURL: root)
+        let fileURL = URL(fileURLWithPath: "/Users/test/Documents/example.txt")
+        let representation = ClipboardHistoryRepresentation(
+            itemIndex: 0,
+            typeIdentifier: NSPasteboard.PasteboardType.fileURL.rawValue,
+            fileName: "payload-0.bin"
+        )
+        let item = ClipboardHistoryItem(
+            id: UUID(),
+            copiedAt: Date(),
+            sourceBundleIdentifier: "com.apple.finder",
+            sourceApplicationName: "Finder",
+            kind: .files,
+            summary: fileURL.lastPathComponent,
+            searchableText: fileURL.path,
+            plainText: nil,
+            contentHash: UUID().uuidString,
+            pixelWidth: nil,
+            pixelHeight: nil,
+            thumbnailFileName: nil,
+            representations: [representation]
+        )
+        let capture = ClipboardHistoryCapture(
+            item: item,
+            payloads: [
+                ClipboardHistoryCapturedRepresentation(
+                    itemIndex: 0,
+                    typeIdentifier: representation.typeIdentifier,
+                    data: Data(fileURL.absoluteString.utf8)
+                )
+            ],
+            thumbnailData: nil
+        )
+        let saved = try await store.save(capture)
+        let storedFileURLs = try await store.fileURLs(for: saved)
+
+        XCTAssertEqual(storedFileURLs, [fileURL])
+    }
+
     func testSearchMatchesContentAndSourceApplication() {
         var capture = makeCapture(text: "deployment notes", date: Date())
         capture.item.sourceApplicationName = "Safari"

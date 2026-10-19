@@ -85,6 +85,26 @@ actor ClipboardHistoryStore {
         return try? Data(contentsOf: itemDirectory(item.id).appendingPathComponent(fileName))
     }
 
+    func fileURLs(for item: ClipboardHistoryItem) throws -> [URL] {
+        guard item.kind == .files else { return [] }
+        return try payloads(for: item).compactMap { payload in
+            guard payload.typeIdentifier == NSPasteboard.PasteboardType.fileURL.rawValue,
+                  let value = String(data: payload.data, encoding: .utf8) else { return nil }
+            return URL(string: value)
+        }
+    }
+
+    func promote(_ item: ClipboardHistoryItem, at date: Date = Date()) throws
+        -> ClipboardHistoryItem {
+        var promoted = item
+        promoted.copiedAt = date
+        try encoder.encode(promoted).write(
+            to: itemDirectory(item.id).appendingPathComponent("metadata.json"),
+            options: .atomic
+        )
+        return promoted
+    }
+
     func previewURL(for item: ClipboardHistoryItem) throws -> URL? {
         if item.kind == .files,
            let payload = try payloads(for: item).first(where: {

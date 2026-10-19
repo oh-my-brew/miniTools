@@ -14,6 +14,7 @@ final class ClipboardHistoryViewModel: ObservableObject {
     @Published var isSearchEditing = false
     @Published private(set) var message: String?
     @Published private(set) var thumbnails: [UUID: Data] = [:]
+    @Published private(set) var fileURLs: [UUID: [URL]] = [:]
     @Published private(set) var searchFocusRequestID = 0
     @Published private(set) var showsNumberShortcuts = false
 
@@ -60,11 +61,15 @@ final class ClipboardHistoryViewModel: ObservableObject {
                 let saved = try await store.save(capture, replacing: duplicate)
                 if let duplicate {
                     thumbnails[duplicate.id] = nil
+                    fileURLs[duplicate.id] = nil
                 }
                 items = try await store.loadItems(retention: retention)
                 if shouldSelectSavedItem { selectedID = saved.id }
                 if let thumbnail = await store.thumbnailData(for: saved) {
                     thumbnails[saved.id] = thumbnail
+                }
+                if saved.kind == .files {
+                    fileURLs[saved.id] = try await store.fileURLs(for: saved)
                 }
             } catch {
                 message = error.localizedDescription
@@ -127,6 +132,19 @@ final class ClipboardHistoryViewModel: ObservableObject {
         try await store.payloads(for: item)
     }
 
+    func promoteUsedItem(_ item: ClipboardHistoryItem) async {
+        do {
+            let promoted = try await store.promote(item)
+            if let index = items.firstIndex(where: { $0.id == item.id }) {
+                items[index] = promoted
+            }
+            items.sort { $0.copiedAt > $1.copiedAt }
+            selectedID = promoted.id
+        } catch {
+            message = "内容已处理，但未能置顶：\(error.localizedDescription)"
+        }
+    }
+
     func previewURL() async throws -> URL? {
         guard let selectedItem else { return nil }
         return try await store.previewURL(for: selectedItem)
@@ -139,6 +157,7 @@ final class ClipboardHistoryViewModel: ObservableObject {
                 try await store.delete(item)
                 items.removeAll { $0.id == item.id }
                 thumbnails[item.id] = nil
+                fileURLs[item.id] = nil
                 normalizeSelection()
             } catch {
                 message = error.localizedDescription
@@ -150,6 +169,7 @@ final class ClipboardHistoryViewModel: ObservableObject {
         try await store.deleteAll()
         items = []
         thumbnails = [:]
+        fileURLs = [:]
         selectedID = nil
     }
 
@@ -168,6 +188,10 @@ final class ClipboardHistoryViewModel: ObservableObject {
             if item.thumbnailFileName != nil,
                let data = await store.thumbnailData(for: item) {
                 thumbnails[item.id] = data
+            }
+            if item.kind == .files,
+               let URLs = try? await store.fileURLs(for: item) {
+                fileURLs[item.id] = URLs
             }
         }
     }
