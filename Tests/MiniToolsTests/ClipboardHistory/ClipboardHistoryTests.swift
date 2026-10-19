@@ -109,6 +109,73 @@ final class ClipboardHistoryTests: XCTestCase {
         )
     }
 
+    func testRelativeTimeUsesCoarseUnits() {
+        let now = Date(timeIntervalSince1970: 100_000)
+        XCTAssertEqual(
+            ClipboardHistoryRelativeTimeFormatter.string(
+                from: now.addingTimeInterval(-42),
+                relativeTo: now
+            ),
+            "刚刚"
+        )
+        XCTAssertEqual(
+            ClipboardHistoryRelativeTimeFormatter.string(
+                from: now.addingTimeInterval(-12 * 60),
+                relativeTo: now
+            ),
+            "12 分钟前"
+        )
+        XCTAssertEqual(
+            ClipboardHistoryRelativeTimeFormatter.string(
+                from: now.addingTimeInterval(-3 * 3_600),
+                relativeTo: now
+            ),
+            "3 小时前"
+        )
+    }
+
+    func testLinkPresentationUsesLocalURLMetadata() throws {
+        let presentation = try XCTUnwrap(
+            ClipboardHistoryLinkPresentation(
+                text: "https://github.com/nfzerox/VirtualMacOniPad?tab=readme"
+            )
+        )
+        XCTAssertEqual(presentation.host, "github.com")
+        XCTAssertEqual(presentation.title, "VirtualMacOniPad")
+        XCTAssertEqual(presentation.displayURL, "github.com/nfzerox/VirtualMacOniPad")
+    }
+
+    func testPreviewFrameAnchorsToCardAndStaysOnScreen() {
+        let screen = CGRect(x: 0, y: 0, width: 1_000, height: 700)
+        let centered = ClipboardHistoryPreviewLayout.frame(
+            size: CGSize(width: 440, height: 320),
+            anchorX: 500,
+            panelTop: 250,
+            screenFrame: screen
+        )
+        XCTAssertEqual(centered.midX, 500)
+        XCTAssertEqual(centered.minY, 262)
+
+        let clamped = ClipboardHistoryPreviewLayout.frame(
+            size: CGSize(width: 440, height: 320),
+            anchorX: 980,
+            panelTop: 500,
+            screenFrame: screen
+        )
+        XCTAssertEqual(clamped.maxX, 982)
+        XCTAssertEqual(clamped.maxY, 682)
+    }
+
+    func testTextPreviewGrowsForLongContent() {
+        let short = makeCapture(text: "short", date: Date()).item
+        let long = makeCapture(text: String(repeating: "long text ", count: 40), date: Date()).item
+        let shortSize = ClipboardHistoryPreviewLayout.size(for: short)
+        let longSize = ClipboardHistoryPreviewLayout.size(for: long)
+
+        XCTAssertGreaterThan(longSize.width, shortSize.width)
+        XCTAssertGreaterThan(longSize.height, shortSize.height)
+    }
+
     private func makeCapture(text: String, date: Date) -> ClipboardHistoryCapture {
         let id = UUID()
         let representation = ClipboardHistoryRepresentation(
