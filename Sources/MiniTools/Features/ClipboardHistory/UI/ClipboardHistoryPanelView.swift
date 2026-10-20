@@ -31,6 +31,7 @@ struct ClipboardHistoryPanelView: View {
     let onOpenSettings: () -> Void
     let onSelectedCardFrameChange: (CGRect?) -> Void
 
+    @State private var timelinePosition = ScrollPosition(x: 0)
     @FocusState private var searchFocused: Bool
 
     var body: some View {
@@ -111,24 +112,33 @@ struct ClipboardHistoryPanelView: View {
                     systemImage: "clipboard"
                 )
             } else {
-                ScrollViewReader { proxy in
-                    ScrollView(.horizontal) {
-                        LazyHStack(spacing: ClipboardHistoryPanelMetrics.cardSpacing) {
-                            ForEach(Array(viewModel.visibleItems.enumerated()), id: \.element.id) {
-                                index, item in
-                                clipboardCard(item, number: index + 1)
-                                    .id(item.id)
-                            }
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: ClipboardHistoryPanelMetrics.cardSpacing) {
+                        ForEach(Array(viewModel.visibleItems.enumerated()), id: \.element.id) {
+                            index, item in
+                            clipboardCard(item, number: index + 1)
+                                .id(item.id)
                         }
-                        .scrollTargetLayout()
-                        .padding(.horizontal, 2)
                     }
-                    .scrollIndicators(.hidden)
-                    .onChange(of: viewModel.selectedID) { _, selectedID in
-                        guard let selectedID else { return }
+                    .scrollTargetLayout()
+                    .padding(.horizontal, 2)
+                }
+                .scrollIndicators(.hidden)
+                .scrollPosition($timelinePosition)
+                .onScrollGeometryChange(for: CGRect.self) { geometry in
+                    geometry.visibleRect
+                } action: { _, rect in
+                    viewModel.updateViewport(rect)
+                }
+                .onChange(of: viewModel.scrollRequest, initial: true) { _, request in
+                    if request.animated {
                         withAnimation(.easeOut(duration: 0.14)) {
-                            proxy.scrollTo(selectedID, anchor: .center)
+                            timelinePosition.scrollTo(x: request.offset)
                         }
+                    } else {
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) { timelinePosition.scrollTo(x: request.offset) }
                     }
                 }
             }
