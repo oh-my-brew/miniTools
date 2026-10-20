@@ -3,7 +3,12 @@ import Foundation
 
 @MainActor
 final class ClipboardHistoryViewModel: ObservableObject {
-    @Published private(set) var items: [ClipboardHistoryItem] = []
+    @Published private(set) var items: [ClipboardHistoryItem] = [] {
+        didSet {
+            // Membership/order changes invalidate reopening, not metadata or preview refreshes.
+            if items.map(\.id) != oldValue.map(\.id) { browsing.didChangeStack() }
+        }
+    }
     @Published var query = "" {
         didSet {
             guard query != oldValue else { return }
@@ -26,13 +31,12 @@ final class ClipboardHistoryViewModel: ObservableObject {
     private var viewportOffset: CGFloat = 0
     private var viewportWidth: CGFloat = 0
     private var previewIsVisible = false
-    private let now: () -> Date
     private var cardStride: CGFloat { ClipboardHistoryPanelMetrics.cardWidth + ClipboardHistoryPanelMetrics.cardSpacing }
 
     func present() {
         guard !browsing.isPresented else { return }
         presentationGeneration += 1
-        let resume = browsing.open(at: now())
+        let resume = browsing.open()
         let ids = visibleItems.map(\.id)
         if resume && browsing.canRestoreContext(in: ids) {
             selectedID = browsing.restoredSelection(in: ids)
@@ -48,7 +52,7 @@ final class ClipboardHistoryViewModel: ObservableObject {
     func dismiss() {
         guard browsing.isPresented else { return }
         presentationGeneration += 1
-        browsing.close(at: now(), ids: visibleItems.map(\.id), selectedID: selectedID,
+        browsing.close(ids: visibleItems.map(\.id), selectedID: selectedID,
                        offset: viewportOffset, stride: cardStride)
         previewIsVisible = false
     }
@@ -95,8 +99,7 @@ final class ClipboardHistoryViewModel: ObservableObject {
     private let applicationAppearanceCache = ClipboardHistoryApplicationAppearanceCache()
     private var retention: ClipboardHistoryRetention
 
-    init(store: ClipboardHistoryStore, retention: ClipboardHistoryRetention, now: @escaping () -> Date = Date.init) {
-        self.now = now
+    init(store: ClipboardHistoryStore, retention: ClipboardHistoryRetention) {
         self.store = store
         self.retention = retention
     }
@@ -132,6 +135,7 @@ final class ClipboardHistoryViewModel: ObservableObject {
         do {
             let duplicate = items.first(where: { $0.contentHash == capture.item.contentHash })
             let saved = try await store.save(capture, replacing: duplicate)
+            browsing.didChangeStack()
             if let duplicate {
                 thumbnails[duplicate.id] = nil
                 fileURLs[duplicate.id] = nil
@@ -212,6 +216,7 @@ final class ClipboardHistoryViewModel: ObservableObject {
         let generation = presentationGeneration
         do {
             let promoted = try await store.promote(item)
+            browsing.didChangeStack()
             var updated = items
             if let index = updated.firstIndex(where: { $0.id == item.id }) {
                 updated[index] = promoted
