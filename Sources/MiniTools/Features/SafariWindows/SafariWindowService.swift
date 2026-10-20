@@ -93,7 +93,7 @@ enum SafariWindowService {
     static func activateWindows(ids: [String]) throws {
         guard !ids.isEmpty else { return }
         try AccessibilityAuthorization.requirePermission()
-        let (application, axApplication) = try safariApplication()
+        let (application, axApplication) = try safariApplication(timeout: 1)
         let windows = try accessibilityWindows(of: axApplication)
         let identifiedWindows = windows.compactMap { window in
             windowIdentifier(for: window, processIdentity: processIdentity(for: application)).map { (id: $0, window: window) }
@@ -106,8 +106,8 @@ enum SafariWindowService {
         }
 
         _ = application.activate(options: [])
-        for target in targets.reversed() {
-            try restoreAndRaise(target)
+        try SafariWindowActivation.activateAll(Array(targets.reversed())) { target in
+            try restoreAndRaise(target, application: application, axApplication: axApplication)
         }
     }
 
@@ -151,27 +151,26 @@ enum SafariWindowService {
         _ = application.activate(options: [])
     }
 
-    private static func restoreAndRaise(_ target: AXUIElement) throws {
-        if AccessibilityClient.boolean(
-            from: target,
-            attribute: kAXMinimizedAttribute as CFString
-        ) == true {
-            let unminimizeResult = AccessibilityClient.setValue(
-                kCFBooleanFalse,
-                on: target,
-                attribute: kAXMinimizedAttribute as CFString
-            )
-            guard unminimizeResult == .success else {
-                throw MiniToolsError.processingFailed("无法恢复已最小化的 Safari 窗口")
+    private static func restoreAndRaise(
+        _ target: AXUIElement, application: NSRunningApplication, axApplication: AXUIElement
+    ) throws {
+        // Identification uses the scan's short timeout; actions need time for Dock animations.
+        AXUIElementSetMessagingTimeout(target, 1)
+        try SafariWindowActivation(
+            isMinimized: {
+                AccessibilityClient.boolean(from: target, attribute: kAXMinimizedAttribute as CFString)
+            }, restore: {
+                AccessibilityClient.setValue(kCFBooleanFalse, on: target,
+                    attribute: kAXMinimizedAttribute as CFString)
+            }, raise: {
+                AccessibilityClient.perform(kAXRaiseAction as CFString, on: target)
+            }, isFrontmost: {
+                guard application.isActive else { return false }
+                let focused = AccessibilityClient.element(from: axApplication,
+                    attribute: kAXFocusedWindowAttribute as CFString)
+                return AccessibilityClient.elementsAreEqual(target, focused)
             }
-        }
-
-        let raiseResult = AccessibilityClient.perform(kAXRaiseAction as CFString, on: target)
-        guard raiseResult == .success else {
-            throw MiniToolsError.processingFailed(
-                "无法将 Safari 窗口置于前台（错误码 \(raiseResult.rawValue)）"
-            )
-        }
+        ).run()
     }
 
     static func makeWindowItems(from records: [SafariAXWindowRecord]) -> [SafariWindowItem] {
@@ -222,13 +221,13 @@ enum SafariWindowService {
         return groupName.isEmpty ? nil : groupName
     }
 
-    private static func safariApplication() throws -> (NSRunningApplication, AXUIElement) {
+    private static func safariApplication(timeout: Float = 0.15) throws -> (NSRunningApplication, AXUIElement) {
         guard let application = runningSafariApplication() else {
             throw MiniToolsError.processingFailed("Safari 未运行")
         }
         return (
             application,
-            AccessibilityClient.application(for: application.processIdentifier, timeout: 0.15)
+            AccessibilityClient.application(for: application.processIdentifier, timeout: timeout)
         )
     }
 
@@ -303,7 +302,7 @@ enum SafariWindowService {
     }
 
     private static func windowIdentifier(for window: AXUIElement, processIdentity: String) -> String? {
-        guard let attributes = try? readAttributes(window, names: [kAXIdentifierAttribute, "AXWindowNumber"]) else { return nil }
+        guard let attributes = try? readAttributes(window, names: [kAXIdentifierAttribute, "AXWindowNumber"], timeout: 1) else { return nil }
         return windowIdentifier(attributes: attributes, processIdentity: processIdentity)
     }
 
@@ -317,9 +316,9 @@ enum SafariWindowService {
         return nil
     }
 
-    private static func readAttributes(_ element: AXUIElement, names: [String]) throws -> [String: Any] {
+    private static func readAttributes(_ element: AXUIElement, names: [String], timeout: Float = 0.15) throws -> [String: Any] {
         // Set a per-element timeout; the scan budget is a separate, cooperative whole-walk limit.
-        AXUIElementSetMessagingTimeout(element, 0.15)
+        AXUIElementSetMessagingTimeout(element, timeout)
         var output: CFArray?
         let status = AXUIElementCopyMultipleAttributeValues(element, names as CFArray, [], &output)
         guard status == .success, let values = output as? [Any] else {

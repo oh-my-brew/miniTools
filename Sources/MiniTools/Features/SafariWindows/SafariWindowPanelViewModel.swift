@@ -166,9 +166,14 @@ final class SafariWindowPanelViewModel: ObservableObject {
         errorMessage = nil
         let generation = sessionGeneration
         activationTask = Task { [weak self] in
-            let result = await Task.detached(priority: .userInitiated) {
+            let worker = Task.detached(priority: .userInitiated) {
                 Result { try operation() }
-            }.value
+            }
+            let result = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
             guard let self,
                   !Task.isCancelled,
                   sessionGeneration == generation else {
