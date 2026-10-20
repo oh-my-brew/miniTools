@@ -155,6 +155,17 @@ final class ClipboardHistoryViewModel: ObservableObject {
         }
     }
 
+    func enrichSearchableText(id: UUID, contentHash: String, text: String) async {
+        guard items.contains(where: { $0.id == id && $0.contentHash == contentHash }) else { return }
+        do {
+            guard let updated = try await store.enrichSearchableText(id: id, contentHash: contentHash, text: text),
+                  let index = items.firstIndex(where: { $0.id == id }) else { return }
+            items[index] = updated // Metadata only: no reordering, recapture or resurrection.
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
     func select(_ id: UUID) {
         selectedID = id
         isSearchEditing = false

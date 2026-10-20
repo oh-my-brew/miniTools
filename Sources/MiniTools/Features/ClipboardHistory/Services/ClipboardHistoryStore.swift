@@ -94,6 +94,16 @@ actor ClipboardHistoryStore {
         }
     }
 
+    func enrichSearchableText(id: UUID, contentHash: String, text: String) throws -> ClipboardHistoryItem? {
+        let url = itemDirectory(id).appendingPathComponent("metadata.json")
+        guard let data = try? Data(contentsOf: url),
+              var item = try? decoder.decode(ClipboardHistoryItem.self, from: data),
+              item.contentHash == contentHash else { return nil }
+        item.searchableText += "\n" + text
+        try encoder.encode(item).write(to: url, options: .atomic)
+        return item
+    }
+
     func promote(_ item: ClipboardHistoryItem, at date: Date = Date()) throws
         -> ClipboardHistoryItem {
         var promoted = item

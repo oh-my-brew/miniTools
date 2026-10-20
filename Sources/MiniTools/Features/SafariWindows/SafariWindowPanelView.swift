@@ -14,7 +14,7 @@ struct SafariWindowPanelView: View {
 
     @ViewBuilder
     private var content: some View {
-        if viewModel.isLoading {
+        if viewModel.isLoading && viewModel.windows.isEmpty {
             Text("正在读取 Safari 窗口…")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
@@ -27,8 +27,8 @@ struct SafariWindowPanelView: View {
                 .padding(.horizontal, 20)
         } else {
             VStack(spacing: viewModel.layout.rowSpacing) {
-                ForEach(viewModel.windows.indices, id: \.self) { index in
-                    windowRow(viewModel.windows[index], at: index)
+                ForEach(Array(viewModel.windows.enumerated()), id: \.element.id) { index, window in
+                    windowRow(window, at: index)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .top)

@@ -4,10 +4,13 @@ struct SafariWindowClient: Sendable {
     let activateWindows: @Sendable ([String]) throws -> Void
     let createWindow: @Sendable () throws -> Void
 
+    var processIdentity: @Sendable () -> String? = { nil }
+
     static let live = SafariWindowClient(
         fetchWindows: SafariWindowService.fetchWindows,
         activateWindow: SafariWindowService.activateWindow,
         activateWindows: SafariWindowService.activateWindows,
-        createWindow: SafariWindowService.createWindow
+        createWindow: SafariWindowService.createWindow,
+        processIdentity: SafariWindowService.currentProcessIdentity
     )
 }

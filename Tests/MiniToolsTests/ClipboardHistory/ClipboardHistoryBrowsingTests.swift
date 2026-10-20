@@ -280,6 +280,29 @@ final class ClipboardHistoryBrowsingTests: XCTestCase {
     }
 
     @MainActor
+    func testOCRMetadataDoesNotResetBrowsingOrResurrectDeletedItems() async throws {
+        try await withModel { model, captures, store in
+            let item = captures[2].item
+            model.present()
+            model.query = "match"
+            model.select(item.id)
+            model.updateViewport(CGRect(x: 503, y: 0, width: 500, height: 240))
+            model.dismiss()
+            await model.enrichSearchableText(id: item.id, contentHash: item.contentHash, text: "recognized")
+            XCTAssertEqual(model.items.first(where: { $0.id == item.id })?.copiedAt, item.copiedAt)
+            model.present()
+            XCTAssertEqual(model.query, "match")
+            XCTAssertEqual(model.selectedID, item.id)
+            XCTAssertEqual(model.scrollRequest.offset, 503)
+            await model.deleteSelectedItem()
+            await model.enrichSearchableText(id: item.id, contentHash: item.contentHash, text: "late OCR")
+            let updated = try await store.enrichSearchableText(id: item.id, contentHash: item.contentHash, text: "late OCR")
+            XCTAssertNil(updated)
+            XCTAssertFalse(model.items.contains(where: { $0.id == item.id }))
+        }
+    }
+
+    @MainActor
     private func withModel(_ body: @MainActor (ClipboardHistoryViewModel, [ClipboardHistoryCapture], ClipboardHistoryStore) async throws -> Void) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("BrowseTests-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }
