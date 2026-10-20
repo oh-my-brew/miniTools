@@ -32,8 +32,9 @@ final class ClipboardHistoryViewModel: ObservableObject {
     func present() {
         guard !browsing.isPresented else { return }
         presentationGeneration += 1
-        if browsing.open(at: now()) {
-            let ids = visibleItems.map(\.id)
+        let resume = browsing.open(at: now())
+        let ids = visibleItems.map(\.id)
+        if resume && browsing.canRestoreContext(in: ids) {
             selectedID = browsing.restoredSelection(in: ids)
             requestScroll(to: browsing.anchor?.offset(in: ids, stride: cardStride) ?? 0)
         } else {
