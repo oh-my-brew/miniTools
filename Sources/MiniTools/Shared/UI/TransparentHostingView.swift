@@ -2,6 +2,13 @@ import AppKit
 import SwiftUI
 
 final class TransparentHostingView<Content: View>: NSHostingView<Content> {
+    var onWillDraw: (() -> Void)?
+
+    override func viewWillDraw() {
+        super.viewWillDraw()
+        if window?.isVisible == true { onWillDraw?() }
+    }
+
     override var isOpaque: Bool { false }
 
     required init(rootView: Content) {

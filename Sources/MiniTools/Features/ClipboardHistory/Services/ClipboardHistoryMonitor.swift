@@ -2,16 +2,28 @@ import AppKit
 
 @MainActor
 final class ClipboardHistoryMonitor {
-    var onCapture: ((ClipboardHistoryCapture) -> Void)?
+    var onCapture: ((ClipboardHistoryCapture) async -> Void)?
+    var onRecognizedText: ((UUID, String, String) async -> Void)?
     var onError: ((String) -> Void)?
 
     private let pasteboard: NSPasteboard
+    private let process: @Sendable (ClipboardHistoryCaptureService.Snapshot) -> ClipboardHistoryCapture?
+    private let recognize: @Sendable (Data) throws -> String?
     private var timer: Timer?
     private var lastChangeCount: Int
     private var isEnabled = false
+    private var generation = 0
+    private var captureTask: Task<Void, Never>?
+    private var recognitionTask: Task<Void, Never>?
 
-    init(pasteboard: NSPasteboard = .general) {
+    init(pasteboard: NSPasteboard = .general,
+         process: @escaping @Sendable (ClipboardHistoryCaptureService.Snapshot) -> ClipboardHistoryCapture? = ClipboardHistoryCaptureService.process,
+         recognize: @escaping @Sendable (Data) throws -> String? = {
+             try ImageRecognitionService.recognizeContents(in: $0).recognizedText
+         }) {
         self.pasteboard = pasteboard
+        self.process = process
+        self.recognize = recognize
         lastChangeCount = pasteboard.changeCount
     }
 
@@ -27,6 +39,7 @@ final class ClipboardHistoryMonitor {
     }
 
     func setEnabled(_ enabled: Bool) {
+        invalidateWork()
         isEnabled = enabled
         lastChangeCount = pasteboard.changeCount
     }
@@ -34,43 +47,53 @@ final class ClipboardHistoryMonitor {
     func stop() {
         timer?.invalidate()
         timer = nil
+        isEnabled = false
+        invalidateWork()
     }
 
-    private func poll() {
+    private func invalidateWork() {
+        generation += 1
+        captureTask?.cancel()
+        recognitionTask?.cancel()
+        captureTask = nil
+        recognitionTask = nil
+    }
+
+    func poll() {
         let changeCount = pasteboard.changeCount
         guard changeCount != lastChangeCount else { return }
         lastChangeCount = changeCount
         guard isEnabled else { return }
-
-        let sourceApplication = NSWorkspace.shared.frontmostApplication
-        guard var capture = ClipboardHistoryCaptureService.capture(
-            from: pasteboard,
-            sourceApplication: sourceApplication
-        ) else { return }
-
-        let imageData = capture.payloads.first(where: {
-            $0.typeIdentifier.hasPrefix("public.")
-                && ($0.typeIdentifier.contains("png")
-                    || $0.typeIdentifier.contains("jpeg")
-                    || $0.typeIdentifier.contains("tiff")
-                    || $0.typeIdentifier.contains("heic"))
-        })?.data
-
-        guard let imageData else {
-            onCapture?(capture)
-            return
+        guard let snapshot = ResponsivenessMetrics.measure("ClipboardSnapshot", {
+            ClipboardHistoryCaptureService.snapshot(from: pasteboard, sourceApplication: NSWorkspace.shared.frontmostApplication)
+        }), pasteboard.changeCount == changeCount else { return }
+        let previous = captureTask
+        let generation = generation
+        let process = process
+        captureTask = Task { [weak self] in
+            await previous?.value
+            guard let self, !Task.isCancelled, self.generation == generation, isEnabled else { return }
+            let capture = await Task.detached(priority: .utility) {
+                ResponsivenessMetrics.measure("ClipboardProcessing") { process(snapshot) }
+            }.value
+            guard !Task.isCancelled, self.generation == generation, isEnabled, let capture else { return }
+            // Await persistence before OCR can update the record; preserve copy order.
+            await onCapture?(capture)
+            guard self.generation == generation, isEnabled else { return }
+            if let image = snapshot.imageData { enqueueRecognition(image, capture: capture, generation: generation) }
         }
+    }
 
-        onCapture?(capture)
-
-        Task.detached(priority: .utility) { [weak self] in
-            let recognizedText = try? ImageRecognitionService
-                .recognizeContents(in: imageData).recognizedText
-            guard let recognizedText, !recognizedText.isEmpty else { return }
-            capture.item.searchableText += "\n" + recognizedText
-            await MainActor.run {
-                self?.onCapture?(capture)
-            }
+    private func enqueueRecognition(_ image: Data, capture: ClipboardHistoryCapture, generation: Int) {
+        let previous = recognitionTask
+        let recognize = recognize
+        recognitionTask = Task { [weak self] in
+            await previous?.value
+            guard let self, !Task.isCancelled, self.generation == generation, isEnabled else { return }
+            let text = await Task.detached(priority: .utility) { try? ResponsivenessMetrics.measure("ClipboardOCR") { try recognize(image) } }.value
+            guard !Task.isCancelled, self.generation == generation, isEnabled,
+                  let text, !text.isEmpty else { return }
+            await onRecognizedText?(capture.item.id, capture.item.contentHash, text)
         }
     }
 }

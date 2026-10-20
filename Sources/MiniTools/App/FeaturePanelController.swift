@@ -14,9 +14,9 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
     private var activePanel: FeaturePanelKind?
     private var hasLoadedEncodingContent = false
     private var hasLoadedSafariWindows = false
-    private var isPresentationPending = false
     private var previousApplication: NSRunningApplication?
     private var isClosing = false
+    private var presentationStart: ContinuousClock.Instant?
 
     private lazy var selectionModel = FeaturePanelSelectionModel(
         selection: settings.lastFeaturePanel
@@ -73,7 +73,7 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
     }
 
     var isPresented: Bool {
-        panel.isVisible || isPresentationPending
+        panel.isVisible
     }
 
     func prepare() {
@@ -86,6 +86,7 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
             return
         }
 
+        presentationStart = .now
         rememberFrontmostApplication()
         activate(settings.lastFeaturePanel, shouldPresent: true)
     }
@@ -96,6 +97,7 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
             return
         }
 
+        presentationStart = .now
         rememberFrontmostApplication()
         activate(kind, shouldPresent: true)
     }
@@ -104,7 +106,7 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
         guard !isClosing else { return }
         isClosing = true
 
-        isPresentationPending = false
+        presentationStart = nil
         panel.orderOut(nil)
         activePanel = nil
         hasLoadedEncodingContent = false
@@ -118,7 +120,6 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
     }
 
     func stop() {
-        isPresentationPending = false
         encodingViewModel.endSession()
         safariViewModel.endSession()
         englishInputSourceSession.end()
@@ -149,9 +150,7 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
             englishInputSourceSession.end()
             if !hasLoadedSafariWindows {
                 hasLoadedSafariWindows = true
-                isPresentationPending = shouldPresent && !panel.isVisible
                 safariViewModel.beginSession()
-                return
             }
 
             updateSafariLayout(for: safariViewModel.windows.count)
@@ -195,9 +194,6 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
 
     private func safariWindowCountDidChange(_ count: Int) {
         updateSafariLayout(for: count)
-        guard isPresentationPending else { return }
-        isPresentationPending = false
-        showPanel()
     }
 
     private func updateSafariLayout(for count: Int) {
@@ -260,14 +256,18 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
         }
 
         panel.makeKeyAndOrderFront(nil)
+        if let start = presentationStart { ResponsivenessMetrics.event("PanelOrderedFront", since: start) }
 
         guard !reduceMotion else { return }
 
-        NSAnimationContext.runAnimationGroup { context in
+        let revealStart = ContinuousClock.now
+        NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.16
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
-        }
+        }, completionHandler: {
+            ResponsivenessMetrics.event("PanelRevealComplete", since: revealStart)
+        })
 
         if let contentLayer {
             let reveal = CABasicAnimation(keyPath: "transform.scale")
@@ -315,7 +315,7 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
         window.keyHandler = { [weak self] event in
             self?.handleKeyEvent(event) ?? false
         }
-        window.contentView = TransparentHostingView(
+        let hostingView = TransparentHostingView(
             rootView: FeaturePanelView(
                 selectionModel: selectionModel,
                 encodingViewModel: encodingViewModel,
@@ -325,6 +325,13 @@ final class FeaturePanelController: NSObject, NSWindowDelegate {
                 }
             )
         )
+        hostingView.onWillDraw = { [weak self] in
+            guard let self, let start = presentationStart else { return }
+            // Draw submission is distinct from compositor presentation/animation completion.
+            ResponsivenessMetrics.event("PanelDrawSubmitted", since: start)
+            presentationStart = nil
+        }
+        window.contentView = hostingView
         return window
     }
 

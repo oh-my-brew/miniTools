@@ -18,50 +18,72 @@ enum SafariWindowService {
     private static var menuItemCommandModifiersAttribute: CFString {
         "AXMenuItemCmdModifiers" as CFString
     }
-    private static let webAreaRole = "AXWebArea"
+    private static let pathCache = SafariWindowPathCache()
     private static let menuItemRole = "AXMenuItem"
 
     static func fetchWindows() throws -> [SafariWindowItem] {
+        try ResponsivenessMetrics.measure("SafariWindowScan") { try readWindows() }
+    }
+
+    private static func readWindows() throws -> [SafariWindowItem] {
         try AccessibilityAuthorization.requirePermission()
         let (application, axApplication) = try safariApplication()
-        let windows = try accessibilityWindows(of: axApplication)
+        let budget = SafariWindowScanBudget()
+        try budget.check()
+        let windows = try ResponsivenessMetrics.measure("SafariEnumerateWindows") { try accessibilityWindows(of: axApplication) }
         let focusedWindow = AccessibilityClient.element(
             from: axApplication,
             attribute: kAXFocusedWindowAttribute as CFString
         )
 
-        let records = windows.compactMap { window -> SafariAXWindowRecord? in
-            let windowTitle = AccessibilityClient.string(
-                from: window,
-                attribute: kAXTitleAttribute as CFString
-            ) ?? ""
-            let tabTitle = activeTabTitle(in: window) ?? ""
-            let accessibilityIdentifier = AccessibilityClient.string(
-                from: window,
-                attribute: kAXIdentifierAttribute as CFString
-            ) ?? ""
-            guard let identifier = windowIdentifier(for: window) else { return nil }
-
-            // Safari browser windows expose a WebArea and normally use a SafariWindow identifier.
-            // Exclude preferences, downloads and other utility windows from this panel.
-            guard !tabTitle.isEmpty || accessibilityIdentifier.contains("SafariWindow") else {
-                return nil
-            }
-
-            return SafariAXWindowRecord(
-                id: identifier,
-                windowTitle: windowTitle,
-                tabTitle: tabTitle,
-                wasActiveWindow: AccessibilityClient.elementsAreEqual(window, focusedWindow)
-                    || AccessibilityClient.boolean(
-                        from: window,
-                        attribute: kAXMainAttribute as CFString
-                    ) == true
-            )
+        let pid = processIdentity(for: application)
+        let cachedPaths = pathCache.snapshot(for: pid)
+        var updatedPaths: [String: SafariWindowPathCache.Entry] = [:]
+        var nodeReads = 0
+        var completed = false
+        defer {
+            // Preserve successful lookups even if a later window exceeds the budget.
+            // A complete scan also prunes paths for closed windows.
+            pathCache.replace(completed ? updatedPaths : cachedPaths.merging(updatedPaths) { _, new in new }, for: pid)
+            ResponsivenessMetrics.count("SafariAXNodes", nodeReads)
         }
+        var records: [SafariAXWindowRecord] = []
+        for window in windows {
+            try budget.check()
+            let attributes = try readAttributes(window, names: [
+                kAXTitleAttribute, kAXIdentifierAttribute, kAXMainAttribute, "AXWindowNumber"
+            ])
+            guard let identifier = windowIdentifier(attributes: attributes, processIdentity: pid) else { continue }
+            let windowTitle = attributes[kAXTitleAttribute] as? String ?? ""
+            let cachedPath = cachedPaths[identifier].flatMap { $0.title == windowTitle ? $0.path : nil }
+            let webArea = try ResponsivenessMetrics.measure("SafariWebAreaLookup") {
+                try SafariWebAreaLocator.locate(
+                root: window, cachedPath: cachedPath,
+                read: { element in
+                    nodeReads += 1
+                    let values = try readAttributes(element, names: [
+                        kAXRoleAttribute, kAXTitleAttribute, kAXDescriptionAttribute, kAXChildrenAttribute
+                    ])
+                    return SafariTreeNode(role: values[kAXRoleAttribute] as? String,
+                        title: values[kAXTitleAttribute] as? String,
+                        description: values[kAXDescriptionAttribute] as? String,
+                        children: values[kAXChildrenAttribute] as? [AXUIElement] ?? [])
+                }, check: budget.check)
+            }
+            if let webArea { updatedPaths[identifier] = .init(title: windowTitle, path: webArea.path) }
+            let accessibilityIdentifier = attributes[kAXIdentifierAttribute] as? String ?? ""
+            guard webArea != nil || accessibilityIdentifier.contains("SafariWindow") else { continue }
+            records.append(SafariAXWindowRecord(
+                id: identifier, windowTitle: attributes[kAXTitleAttribute] as? String ?? "",
+                tabTitle: webArea?.title ?? "",
+                wasActiveWindow: AccessibilityClient.elementsAreEqual(window, focusedWindow)
+                    || (attributes[kAXMainAttribute] as? NSNumber)?.boolValue == true))
+        }
+        try budget.check()
+        completed = true
 
         _ = application // Keep the running application alive while reading its AX hierarchy.
-        return makeWindowItems(from: records)
+        return ResponsivenessMetrics.measure("SafariBuildList") { makeWindowItems(from: records) }
     }
 
     static func activateWindow(id: String) throws {
@@ -74,7 +96,7 @@ enum SafariWindowService {
         let (application, axApplication) = try safariApplication()
         let windows = try accessibilityWindows(of: axApplication)
         let identifiedWindows = windows.compactMap { window in
-            windowIdentifier(for: window).map { (id: $0, window: window) }
+            windowIdentifier(for: window, processIdentity: processIdentity(for: application)).map { (id: $0, window: window) }
         }
         let targets = ids.compactMap { id in
             identifiedWindows.first(where: { $0.id == id })?.window
@@ -206,7 +228,7 @@ enum SafariWindowService {
         }
         return (
             application,
-            AccessibilityClient.application(for: application.processIdentifier)
+            AccessibilityClient.application(for: application.processIdentifier, timeout: 0.15)
         )
     }
 
@@ -272,56 +294,37 @@ enum SafariWindowService {
         return windows
     }
 
-    private static func windowIdentifier(for window: AXUIElement) -> String? {
-        if let identifier = AccessibilityClient.string(
-            from: window,
-            attribute: kAXIdentifierAttribute as CFString
-        ), !identifier.isEmpty {
-            return "identifier:\(identifier)"
+    static func currentProcessIdentity() -> String? {
+        runningSafariApplication().map(processIdentity)
+    }
+
+    private static func processIdentity(for application: NSRunningApplication) -> String {
+        "\(application.processIdentifier):\(application.launchDate?.timeIntervalSince1970 ?? 0)"
+    }
+
+    private static func windowIdentifier(for window: AXUIElement, processIdentity: String) -> String? {
+        guard let attributes = try? readAttributes(window, names: [kAXIdentifierAttribute, "AXWindowNumber"]) else { return nil }
+        return windowIdentifier(attributes: attributes, processIdentity: processIdentity)
+    }
+
+    private static func windowIdentifier(attributes: [String: Any], processIdentity: String) -> String? {
+        if let identifier = attributes[kAXIdentifierAttribute] as? String, !identifier.isEmpty {
+            return "process:\(processIdentity):identifier:\(identifier)"
         }
-        if let windowNumber = AccessibilityClient.integer(from: window, attribute: windowNumberAttribute) {
-            return "window-number:\(windowNumber)"
+        if let number = attributes["AXWindowNumber"] as? Int {
+            return "process:\(processIdentity):window-number:\(number)"
         }
         return nil
     }
 
-    private static func activeTabTitle(in window: AXUIElement) -> String? {
-        var queue: [(element: AXUIElement, depth: Int)] = [(window, 0)]
-        var cursor = 0
-        var inspectedElementCount = 0
-
-        while cursor < queue.count, inspectedElementCount < 250 {
-            let current = queue[cursor]
-            cursor += 1
-            inspectedElementCount += 1
-
-            if AccessibilityClient.string(
-                from: current.element,
-                attribute: kAXRoleAttribute as CFString
-            ) == webAreaRole {
-                let title = [
-                    AccessibilityClient.string(
-                        from: current.element,
-                        attribute: kAXTitleAttribute as CFString
-                    ),
-                    AccessibilityClient.string(
-                        from: current.element,
-                        attribute: kAXDescriptionAttribute as CFString
-                    )
-                ]
-                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .first(where: { !$0.isEmpty })
-                if let title {
-                    return title
-                }
-            }
-
-            guard current.depth < 8 else { continue }
-            queue.append(contentsOf: AccessibilityClient.elements(
-                from: current.element,
-                attribute: kAXChildrenAttribute as CFString
-            ).map { ($0, current.depth + 1) })
+    private static func readAttributes(_ element: AXUIElement, names: [String]) throws -> [String: Any] {
+        // Set a per-element timeout; the scan budget is a separate, cooperative whole-walk limit.
+        AXUIElementSetMessagingTimeout(element, 0.15)
+        var output: CFArray?
+        let status = AXUIElementCopyMultipleAttributeValues(element, names as CFArray, [], &output)
+        guard status == .success, let values = output as? [Any] else {
+            throw MiniToolsError.processingFailed("无法读取 Safari 窗口（错误码 \(status.rawValue)），请重新打开刷新")
         }
-        return nil
+        return Dictionary(uniqueKeysWithValues: zip(names, values))
     }
 }

@@ -144,3 +144,14 @@ Team ID `566UG6DQ7E` 和 Developer ID 签名，避免再次破坏 TCC 权限身�
 
 项目包含第三方图稿和商标相关素材。面向个人设备或私有分发的风险较小；提交 Homebrew
 官方 Cask 或公开推广前，应替换为原创素材并复核 `THIRD_PARTY_NOTICES.md` 中的许可状态。
+
+## 响应性能诊断
+
+统一面板与剪贴板管线通过系统 Instruments 的 `com.omzcj.minitools` / `Responsiveness`
+signpost 记录固定阶段名、耗时和节点数量，不记录标题、URL、路径或剪贴板内容。
+`PanelHotkeyMainQueue`、`SafariEnumerateWindows`、`SafariWebAreaLookup`、`SafariWindowScan`、
+`PanelOrderedFront`、`PanelDrawSubmitted`、`PanelRevealComplete` 可用于区分主线程排队、AX 扫描及呈现阶段；
+绘制提交不等于屏幕首帧呈现，实际首帧/掉帧需另用 Instruments 采样。
+自动化以假 AX 客户端和私有剪贴板验证取消、缓存身份、映射冻结、后台处理及停止后的结果丢弃，
+不启动应用。HTML-only 剪贴板的系统导入仍遵守主线程约束；不能把自动测试或签名公证通过描述为
+实际响应时间已经改善，交付时需保留运行时未验证说明。

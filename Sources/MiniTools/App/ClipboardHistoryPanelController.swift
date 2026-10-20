@@ -36,7 +36,10 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate {
         self.monitor = monitor
         self.eventPoster = eventPoster
         super.init()
-        monitor.onCapture = { [weak self] capture in self?.viewModel.accept(capture) }
+        monitor.onCapture = { [weak self] capture in await self?.viewModel.record(capture) }
+        monitor.onRecognizedText = { [weak self] id, hash, text in
+            await self?.viewModel.enrichSearchableText(id: id, contentHash: hash, text: text)
+        }
         monitor.onError = { [weak self] message in self?.viewModel.showMessage(message) }
     }
 

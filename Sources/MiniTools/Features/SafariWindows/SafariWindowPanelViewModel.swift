@@ -18,6 +18,10 @@ final class SafariWindowPanelViewModel: ObservableObject {
     private var loadingTask: Task<Void, Never>?
     private var activationTask: Task<Void, Never>?
     private var sessionGeneration = 0
+    private let scanWorker = SafariWindowScanWorker()
+    private var cachedProcessIdentity: String?
+    private var pendingWindows: [SafariWindowItem]?
+    private var hasInteracted = false
     private let client: SafariWindowClient
 
     init(
@@ -31,6 +35,17 @@ final class SafariWindowPanelViewModel: ObservableObject {
 
     func beginSession() {
         sessionGeneration += 1
+        hasInteracted = false
+        let process = client.processIdentity()
+        if process != cachedProcessIdentity {
+            windows = []
+            selectedWindowID = nil
+            pendingWindows = nil
+        } else if let pendingWindows {
+            apply(pendingWindows)
+            self.pendingWindows = nil
+        }
+        cachedProcessIdentity = process
         load()
     }
 
@@ -51,11 +66,16 @@ final class SafariWindowPanelViewModel: ObservableObject {
         errorMessage = nil
         let fetchWindows = client.fetchWindows
         let generation = sessionGeneration
+        let process = cachedProcessIdentity
+        let worker = scanWorker
 
         loadingTask = Task { [weak self] in
-            let result = await Task.detached(priority: .userInitiated) {
-                Result { try fetchWindows() }
-            }.value
+            let result: Result<[SafariWindowItem], Error>
+            do {
+                result = .success(try await worker.fetch(fetchWindows))
+            } catch {
+                result = .failure(error)
+            }
             guard let self,
                   !Task.isCancelled,
                   sessionGeneration == generation else {
@@ -64,26 +84,40 @@ final class SafariWindowPanelViewModel: ObservableObject {
 
             loadingTask = nil
             isLoading = false
-            switch result {
-            case let .success(items):
-                windows = items
-                selectedWindowID = items.first(where: \.wasActiveWindow)?.id ?? items.first?.id
-                if items.isEmpty {
-                    errorMessage = "Safari 未运行或当前没有浏览器窗口"
-                }
-                onWindowCountChanged?(items.count)
-
-            case let .failure(error):
+            guard client.processIdentity() == process else {
                 windows = []
                 selectedWindowID = nil
-                errorMessage = error.localizedDescription
+                pendingWindows = nil
+                errorMessage = "Safari 已退出或重启，请重新打开窗口列表"
                 onWindowCountChanged?(0)
+                return
+            }
+            switch result {
+            case let .success(items):
+                if hasInteracted {
+                    // Freeze both row order and letter mapping during keyboard interaction.
+                    pendingWindows = items
+                } else {
+                    apply(items)
+                }
+            case let .failure(error):
+                if error is CancellationError { return }
+                // Keep a valid process-scoped snapshot available when refresh is slow.
+                errorMessage = error.localizedDescription
+                onWindowCountChanged?(windows.count)
             }
         }
     }
 
+    private func apply(_ items: [SafariWindowItem]) {
+        if windows != items { windows = items }
+        selectedWindowID = items.first(where: \.wasActiveWindow)?.id ?? items.first?.id
+        errorMessage = items.isEmpty ? "Safari 未运行或当前没有浏览器窗口" : nil
+        onWindowCountChanged?(items.count)
+    }
+
     func activateSelectedWindow() {
-        guard !isActivating, let selectedWindowID else { return }
+        guard !isActivating, let selectedWindowID, validateWindowProcess() else { return }
         let activateWindow = client.activateWindow
         performActivation {
             try activateWindow(selectedWindowID)
@@ -91,7 +125,7 @@ final class SafariWindowPanelViewModel: ObservableObject {
     }
 
     func activateAllUngroupedWindows() {
-        guard !isActivating else { return }
+        guard !isActivating, validateWindowProcess() else { return }
         let windowIDs = windows.filter { !$0.hasTabGroup }.map(\.id)
         guard !windowIDs.isEmpty else {
             errorMessage = "当前没有不属于标签页组的 Safari 窗口"
@@ -102,6 +136,18 @@ final class SafariWindowPanelViewModel: ObservableObject {
         performActivation {
             try activateWindows(windowIDs)
         }
+    }
+
+    private func validateWindowProcess() -> Bool {
+        guard client.processIdentity() == cachedProcessIdentity else {
+            windows = []
+            pendingWindows = nil
+            selectedWindowID = nil
+            errorMessage = "Safari 已退出或重启，请重新打开窗口列表"
+            onWindowCountChanged?(0)
+            return false
+        }
+        return true
     }
 
     func createWindow() {
@@ -115,6 +161,7 @@ final class SafariWindowPanelViewModel: ObservableObject {
         _ operation: @escaping @Sendable () throws -> Void
     ) {
         guard !isActivating else { return }
+        hasInteracted = true
         isActivating = true
         errorMessage = nil
         let generation = sessionGeneration
@@ -174,6 +221,7 @@ final class SafariWindowPanelViewModel: ObservableObject {
             return true
         }
         if let index = Self.selectionKeys.firstIndex(of: key), windows.indices.contains(index) {
+            hasInteracted = true
             selectedWindowID = windows[index].id
             activateSelectedWindow()
             return true
@@ -187,6 +235,7 @@ final class SafariWindowPanelViewModel: ObservableObject {
 
     private func moveSelection(by offset: Int) {
         guard !windows.isEmpty else { return }
+        hasInteracted = true
         errorMessage = nil
         let current = windows.firstIndex(where: { $0.id == selectedWindowID }) ?? 0
         let next = min(max(current + offset, 0), windows.count - 1)

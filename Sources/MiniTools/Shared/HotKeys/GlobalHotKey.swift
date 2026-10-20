@@ -20,7 +20,11 @@ private let miniToolsHotKeyHandler: EventHandlerUPP = { _, event, userData in
     guard receivedID.id == manager.identifier else { return OSStatus(eventNotHandledErr) }
 
     let eventKind = GetEventKind(event)
+    let receivedAt = ContinuousClock.now
     DispatchQueue.main.async {
+        if manager.identifier == 1, eventKind != UInt32(kEventHotKeyReleased) {
+            ResponsivenessMetrics.event("PanelHotkeyMainQueue", since: receivedAt)
+        }
         if eventKind == UInt32(kEventHotKeyReleased) {
             manager.onReleased?()
         } else {
