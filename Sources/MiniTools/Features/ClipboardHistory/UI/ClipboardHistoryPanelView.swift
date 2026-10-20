@@ -190,7 +190,7 @@ struct ClipboardHistoryPanelView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(
                     item.id == viewModel.selectedID ? Color.accentColor : Color.white.opacity(0.12),
-                    lineWidth: item.id == viewModel.selectedID ? 2 : 0.5
+                    lineWidth: item.id == viewModel.selectedID ? 4 : 0.5
                 )
         }
         .overlay(alignment: .bottomTrailing) {
