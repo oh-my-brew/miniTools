@@ -2,8 +2,6 @@ import Foundation
 
 /// In-memory browsing continuity. No clipboard access or UI objects are retained.
 struct ClipboardHistoryBrowsingState {
-    static let resumeInterval: TimeInterval = 5 * 60
-
     struct Anchor {
         let order: [UUID]
         let index: Int
@@ -39,31 +37,33 @@ struct ClipboardHistoryBrowsingState {
     }
 
     private(set) var isPresented = false
-    private var closedAt: Date?
+    private var hasSavedContext = false
     private var used = false
+    private var stackChanged = false
     private(set) var anchor: Anchor?
     private(set) var selectedID: UUID?
     private var order: [UUID] = []
 
-    mutating func open(at date: Date) -> Bool {
+    mutating func open() -> Bool {
         guard !isPresented else { return true }
-        let resume = closedAt.map { !used && date.timeIntervalSince($0) >= 0
-            && date.timeIntervalSince($0) <= Self.resumeInterval } ?? false
+        let resume = hasSavedContext && !used && !stackChanged
         isPresented = true
         used = false
+        stackChanged = false
         return resume
     }
 
-    mutating func close(at date: Date, ids: [UUID], selectedID: UUID?, offset: CGFloat, stride: CGFloat) {
+    mutating func close(ids: [UUID], selectedID: UUID?, offset: CGFloat, stride: CGFloat) {
         guard isPresented else { return }
         isPresented = false
-        closedAt = date
+        hasSavedContext = true
         order = ids
         self.selectedID = selectedID
         anchor = Anchor(ids: ids, offset: offset, stride: stride)
     }
 
     mutating func didUseItem() { used = true }
+    mutating func didChangeStack() { stackChanged = true }
 
     func canRestoreContext(in ids: [UUID]) -> Bool {
         let survivors = Set(ids)
