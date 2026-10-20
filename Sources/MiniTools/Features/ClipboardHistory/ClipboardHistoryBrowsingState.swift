@@ -17,6 +17,8 @@ struct ClipboardHistoryBrowsingState {
         }
 
         func offset(in ids: [UUID], stride: CGFloat) -> CGFloat {
+            let survivors = Set(ids)
+            guard order.contains(where: survivors.contains) else { return 0 }
             guard let id = Self.nearest(to: order[index], oldOrder: order, surviving: ids),
                   let newIndex = ids.firstIndex(of: id) else { return 0 }
             return max(0, CGFloat(newIndex) * stride + displacement)
@@ -62,6 +64,11 @@ struct ClipboardHistoryBrowsingState {
     }
 
     mutating func didUseItem() { used = true }
+
+    func canRestoreContext(in ids: [UUID]) -> Bool {
+        let survivors = Set(ids)
+        return order.isEmpty || order.contains(where: survivors.contains)
+    }
 
     func restoredSelection(in ids: [UUID]) -> UUID? {
         Anchor.nearest(to: selectedID, oldOrder: order, surviving: ids)

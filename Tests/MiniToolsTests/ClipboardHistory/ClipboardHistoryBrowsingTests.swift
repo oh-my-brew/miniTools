@@ -26,6 +26,7 @@ final class ClipboardHistoryBrowsingTests: XCTestCase {
         XCTAssertEqual(anchor.offset(in: [UUID()] + ids, stride: 250), 763)
         XCTAssertEqual(anchor.offset(in: [ids[0], ids[1], ids[3], ids[4]], stride: 250), 513)
         XCTAssertEqual(anchor.offset(in: [], stride: 250), 0)
+        XCTAssertEqual(anchor.offset(in: [UUID(), UUID()], stride: 250), 0)
         XCTAssertEqual(ClipboardHistoryBrowsingState.Anchor.nearest(
             to: ids[4], oldOrder: ids, surviving: Array(ids.prefix(3))), ids[2])
     }
@@ -117,6 +118,24 @@ final class ClipboardHistoryBrowsingTests: XCTestCase {
             XCTAssertEqual(model.selectedID, captures[2].item.id)
             model.updateViewport(CGRect(x: 0, y: 0, width: 1000, height: 240))
             await model.record(self.capture("follow latest", date: 23))
+            XCTAssertEqual(model.selectedID, model.items.first?.id)
+            XCTAssertEqual(model.scrollRequest.offset, 0)
+        }
+    }
+
+    @MainActor
+    func testClearedHistoryDoesNotCarryOldSearchOrPartialOffsetToNewCards() async throws {
+        try await withModel { model, captures, advance in
+            model.present()
+            model.query = "match"
+            model.select(captures[2].item.id)
+            model.updateViewport(CGRect(x: 513, y: 0, width: 500, height: 240))
+            model.dismiss()
+            try await model.deleteAll()
+            await model.record(self.capture("different new content", date: 30))
+            advance(10)
+            model.present()
+            XCTAssertEqual(model.query, "")
             XCTAssertEqual(model.selectedID, model.items.first?.id)
             XCTAssertEqual(model.scrollRequest.offset, 0)
         }
