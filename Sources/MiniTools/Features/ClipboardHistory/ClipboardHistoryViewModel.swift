@@ -6,8 +6,10 @@ final class ClipboardHistoryViewModel: ObservableObject {
     @Published private(set) var items: [ClipboardHistoryItem] = []
     @Published var query = "" {
         didSet {
-            if query != oldValue { isSearchEditing = true }
-            normalizeSelection()
+            guard query != oldValue else { return }
+            isSearchEditing = true
+            selectedID = visibleItems.first?.id
+            requestScroll(to: 0)
         }
     }
     @Published private(set) var selectedID: UUID?
@@ -18,11 +20,82 @@ final class ClipboardHistoryViewModel: ObservableObject {
     @Published private(set) var searchFocusRequestID = 0
     @Published private(set) var showsNumberShortcuts = false
 
+    @Published private(set) var scrollRequest = ClipboardHistoryScrollRequest(sequence: 0, offset: 0, animated: false)
+    private var browsing = ClipboardHistoryBrowsingState()
+    private var presentationGeneration = 0
+    private var viewportOffset: CGFloat = 0
+    private var viewportWidth: CGFloat = 0
+    private var previewIsVisible = false
+    private let now: () -> Date
+    private var cardStride: CGFloat { ClipboardHistoryPanelMetrics.cardWidth + ClipboardHistoryPanelMetrics.cardSpacing }
+
+    func present() {
+        guard !browsing.isPresented else { return }
+        presentationGeneration += 1
+        if browsing.open(at: now()) {
+            let ids = visibleItems.map(\.id)
+            selectedID = browsing.restoredSelection(in: ids)
+            requestScroll(to: browsing.anchor?.offset(in: ids, stride: cardStride) ?? 0)
+        } else {
+            query = ""
+            isSearchEditing = false
+            selectedID = items.first?.id
+            requestScroll(to: 0)
+        }
+    }
+
+    func dismiss() {
+        guard browsing.isPresented else { return }
+        presentationGeneration += 1
+        browsing.close(at: now(), ids: visibleItems.map(\.id), selectedID: selectedID,
+                       offset: viewportOffset, stride: cardStride)
+        previewIsVisible = false
+    }
+
+    func didUseItem() { browsing.didUseItem() }
+    func setPreviewVisible(_ visible: Bool) { previewIsVisible = visible }
+
+    func updateViewport(_ rect: CGRect) {
+        guard browsing.isPresented else { return }
+        viewportOffset = max(0, rect.minX)
+        viewportWidth = rect.width
+    }
+
+    private func requestScroll(to offset: CGFloat, animated: Bool = false) {
+        viewportOffset = max(0, offset)
+        scrollRequest = .init(sequence: scrollRequest.sequence + 1, offset: viewportOffset, animated: animated)
+    }
+
+    private func revealSelection() {
+        guard let id = selectedID, let index = visibleItems.firstIndex(where: { $0.id == id }) else { return }
+        let offset = ClipboardHistoryBrowsingState.visibleOffset(
+            index: index, current: viewportOffset, viewport: viewportWidth,
+            cardWidth: ClipboardHistoryPanelMetrics.cardWidth, stride: cardStride, leadingInset: 2)
+        if offset != viewportOffset { requestScroll(to: offset, animated: true) }
+    }
+
+    private func replaceItems(_ loaded: [ClipboardHistoryItem], followsNewest: Bool = false) {
+        let ids = visibleItems.map(\.id)
+        let anchor = ClipboardHistoryBrowsingState.Anchor(ids: ids, offset: viewportOffset, stride: cardStride)
+        let previousSelection = selectedID
+        items = loaded
+        let newIDs = visibleItems.map(\.id)
+        if followsNewest {
+            selectedID = newIDs.first
+            requestScroll(to: 0)
+        } else {
+            selectedID = ClipboardHistoryBrowsingState.Anchor.nearest(
+                to: previousSelection, oldOrder: ids, surviving: newIDs)
+            if browsing.isPresented { requestScroll(to: anchor?.offset(in: newIDs, stride: cardStride) ?? 0) }
+        }
+    }
+
     private let store: ClipboardHistoryStore
     private let applicationAppearanceCache = ClipboardHistoryApplicationAppearanceCache()
     private var retention: ClipboardHistoryRetention
 
-    init(store: ClipboardHistoryStore, retention: ClipboardHistoryRetention) {
+    init(store: ClipboardHistoryStore, retention: ClipboardHistoryRetention, now: @escaping () -> Date = Date.init) {
+        self.now = now
         self.store = store
         self.retention = retention
     }
@@ -35,16 +108,15 @@ final class ClipboardHistoryViewModel: ObservableObject {
         visibleItems.first(where: { $0.id == selectedID })
     }
 
-    func start() {
-        Task {
-            do {
-                let loaded = try await store.loadItems(retention: retention)
-                items = loaded
-                normalizeSelection()
-                await loadVisiblePreviews()
-            } catch {
-                message = error.localizedDescription
-            }
+    func start() { Task { await reload() } }
+
+    func reload() async {
+        do {
+            let loaded = try await store.loadItems(retention: retention)
+            replaceItems(loaded)
+            await loadVisiblePreviews()
+        } catch {
+            message = error.localizedDescription
         }
     }
 
@@ -53,33 +125,35 @@ final class ClipboardHistoryViewModel: ObservableObject {
         start()
     }
 
-    func accept(_ capture: ClipboardHistoryCapture) {
-        Task {
-            do {
-                let duplicate = items.first(where: { $0.contentHash == capture.item.contentHash })
-                let shouldSelectSavedItem = duplicate == nil || selectedID == duplicate?.id
-                let saved = try await store.save(capture, replacing: duplicate)
-                if let duplicate {
-                    thumbnails[duplicate.id] = nil
-                    fileURLs[duplicate.id] = nil
-                }
-                items = try await store.loadItems(retention: retention)
-                if shouldSelectSavedItem { selectedID = saved.id }
-                if let thumbnail = await store.thumbnailData(for: saved) {
-                    thumbnails[saved.id] = thumbnail
-                }
-                if saved.kind == .files {
-                    fileURLs[saved.id] = try await store.fileURLs(for: saved)
-                }
-            } catch {
-                message = error.localizedDescription
+    func accept(_ capture: ClipboardHistoryCapture) { Task { await record(capture) } }
+
+    func record(_ capture: ClipboardHistoryCapture) async {
+        do {
+            let duplicate = items.first(where: { $0.contentHash == capture.item.contentHash })
+            let saved = try await store.save(capture, replacing: duplicate)
+            if let duplicate {
+                thumbnails[duplicate.id] = nil
+                fileURLs[duplicate.id] = nil
             }
+            let loaded = try await store.loadItems(retention: retention)
+            let followsNewest = browsing.isPresented && query.isEmpty && !isSearchEditing
+                && !previewIsVisible && viewportOffset <= 2
+            replaceItems(loaded, followsNewest: followsNewest)
+            if let thumbnail = await store.thumbnailData(for: saved) {
+                thumbnails[saved.id] = thumbnail
+            }
+            if saved.kind == .files {
+                fileURLs[saved.id] = try await store.fileURLs(for: saved)
+            }
+        } catch {
+            message = error.localizedDescription
         }
     }
 
     func select(_ id: UUID) {
         selectedID = id
         isSearchEditing = false
+        revealSelection()
     }
 
     func moveSelection(by offset: Int) {
@@ -88,17 +162,17 @@ final class ClipboardHistoryViewModel: ObservableObject {
         guard let selectedID,
               let index = visible.firstIndex(where: { $0.id == selectedID }) else {
             self.selectedID = visible[0].id
+            revealSelection()
             return
         }
         self.selectedID = visible[min(max(index + offset, 0), visible.count - 1)].id
         isSearchEditing = false
+        revealSelection()
     }
 
-    func selectVisibleItem(number: Int) -> ClipboardHistoryItem? {
+    func visibleItem(number: Int) -> ClipboardHistoryItem? {
         guard visibleItems.indices.contains(number - 1) else { return nil }
-        let item = visibleItems[number - 1]
-        selectedID = item.id
-        return item
+        return visibleItems[number - 1]
     }
 
     func focusSearch() {
@@ -124,7 +198,8 @@ final class ClipboardHistoryViewModel: ObservableObject {
     func clearSearch() {
         query = ""
         isSearchEditing = false
-        normalizeSelection()
+        selectedID = items.first?.id
+        requestScroll(to: 0)
     }
 
     func payloads(for item: ClipboardHistoryItem) async throws
@@ -133,13 +208,19 @@ final class ClipboardHistoryViewModel: ObservableObject {
     }
 
     func promoteUsedItem(_ item: ClipboardHistoryItem) async {
+        let generation = presentationGeneration
         do {
             let promoted = try await store.promote(item)
-            if let index = items.firstIndex(where: { $0.id == item.id }) {
-                items[index] = promoted
+            var updated = items
+            if let index = updated.firstIndex(where: { $0.id == item.id }) {
+                updated[index] = promoted
             }
-            items.sort { $0.copiedAt > $1.copiedAt }
-            selectedID = promoted.id
+            updated.sort { $0.copiedAt > $1.copiedAt }
+            if generation == presentationGeneration {
+                items = updated // The current operation closes the panel; do not scroll first.
+            } else {
+                replaceItems(updated) // A reopened panel retains its own browsing context.
+            }
         } catch {
             message = "内容已处理，但未能置顶：\(error.localizedDescription)"
         }
@@ -150,18 +231,18 @@ final class ClipboardHistoryViewModel: ObservableObject {
         return try await store.previewURL(for: selectedItem)
     }
 
-    func deleteSelection() {
+    func deleteSelection() { Task { await deleteSelectedItem() } }
+
+    func deleteSelectedItem() async {
         guard let item = selectedItem else { return }
-        Task {
-            do {
-                try await store.delete(item)
-                items.removeAll { $0.id == item.id }
-                thumbnails[item.id] = nil
-                fileURLs[item.id] = nil
-                normalizeSelection()
-            } catch {
-                message = error.localizedDescription
-            }
+        do {
+            try await store.delete(item)
+            replaceItems(items.filter { $0.id != item.id })
+            thumbnails[item.id] = nil
+            fileURLs[item.id] = nil
+            normalizeSelection()
+        } catch {
+            message = error.localizedDescription
         }
     }
 
@@ -171,6 +252,7 @@ final class ClipboardHistoryViewModel: ObservableObject {
         thumbnails = [:]
         fileURLs = [:]
         selectedID = nil
+        requestScroll(to: 0)
     }
 
     func showMessage(_ value: String) {

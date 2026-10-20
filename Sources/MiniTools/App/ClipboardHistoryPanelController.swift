@@ -76,6 +76,7 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate {
 
     func show() {
         sessionGeneration += 1
+        viewModel.present()
         viewModel.updateCommandKey(isPressed: false)
         rememberFrontmostApplication()
         positionPanel()
@@ -100,6 +101,7 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate {
         previewTask?.cancel()
         previewTask = nil
         closePreview()
+        viewModel.dismiss()
         panel.orderOut(nil)
         if restoreFocus { previousApplication?.activate(options: []) }
         previousApplication = nil
@@ -195,7 +197,7 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate {
             return true
         }
         if command, let number = number(for: event.keyCode) {
-            guard let item = viewModel.selectVisibleItem(number: number) else { return true }
+            guard let item = viewModel.visibleItem(number: number) else { return true }
             perform(item: item, plainTextOnly: shift, shouldPaste: true)
             return true
         }
@@ -294,15 +296,19 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate {
         plainTextOnly: Bool,
         shouldPaste: Bool
     ) {
+        let generation = sessionGeneration
         Task {
             do {
                 let payloads = try await viewModel.payloads(for: item)
+                guard generation == sessionGeneration, panel.isVisible else { return }
                 try ClipboardHistoryPasteService.write(
                     item: item,
                     payloads: payloads,
                     plainTextOnly: plainTextOnly
                 )
+                viewModel.didUseItem()
                 await viewModel.promoteUsedItem(item)
+                guard generation == sessionGeneration, panel.isVisible else { return }
                 guard shouldPaste else {
                     close(restoreFocus: true)
                     return
@@ -311,9 +317,12 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate {
                 if !canPost { _ = eventPoster.requestAccess() }
                 close(restoreFocus: true)
                 guard canPost else { return }
+                let closedGeneration = sessionGeneration
                 try? await Task.sleep(for: .milliseconds(80))
+                guard sessionGeneration == closedGeneration, !panel.isVisible else { return }
                 eventPoster.postPasteShortcut()
             } catch {
+                guard generation == sessionGeneration else { return }
                 viewModel.showMessage(error.localizedDescription)
             }
         }
@@ -321,6 +330,7 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate {
 
     private func showPreview() {
         guard let requestedItemID = viewModel.selectedItem?.id else { return }
+        viewModel.setPreviewVisible(true)
         previewTask?.cancel()
         let generation = sessionGeneration
         previewTask = Task {
@@ -334,6 +344,7 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate {
                     url = nil
                 } else {
                     guard let previewURL = try await viewModel.previewURL() else {
+                        viewModel.setPreviewVisible(false)
                         viewModel.showMessage("此内容无法预览")
                         return
                     }
@@ -355,12 +366,14 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate {
                 )
             } catch {
                 guard !Task.isCancelled, generation == sessionGeneration else { return }
+                viewModel.setPreviewVisible(false)
                 viewModel.showMessage(error.localizedDescription)
             }
         }
     }
 
     private func closePreview() {
+        viewModel.setPreviewVisible(false)
         previewTask?.cancel()
         previewTask = nil
         previewedItemID = nil
