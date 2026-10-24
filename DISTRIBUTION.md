@@ -4,19 +4,19 @@
 
 开发完成后立即从固定源码提交启动 `.github/workflows/beta.yml`，不等源码 CI 或人工体验确认。
 同仓库、非 draft 的开发 PR 添加 `release` 标签后，后续 source 更新会自动请求新候选；
-也可由仓库 writer 对已有同仓库、非 draft 开发 PR 的准确 head 派发：
+也可由仓库 writer 对本仓库分支的准确 head 派发：
 
 ```sh
 gh workflow run beta.yml --ref master --field source_ref=<40位准确源码SHA>
 ```
 
-- 受信任默认分支 workflow 调用固定 SHA 的 brew-ci 协调脚本，在独立 `release/auto-<run-id>` 分支准备版本候选，再以普通非强推快进追加到现有开发 PR 分支；不修改本地工作树。以当前默认分支合入请求源码后，分配新的 `YYYY.MM.DD.N`，开发 PR 指向准确候选 commit/tree。组织禁止 Actions 建 PR 的策略保持不变。
+- 受信任默认分支 workflow 调用固定 SHA 的 brew-ci 协调脚本，创建独立 `release/auto-<run-id>` 分支与候选 PR，不回写开发分支或本地工作树。以当前默认分支合入请求源码后分配新的 `YYYY.MM.DD.N`，候选 PR 指向准确 commit/tree。组织允许相关权限，只在这两个产品仓库启用 Actions 创建候选 PR。
 - 包构建与单元/回归测试、CodeQL 快速语言扫描并行。Beta 只等包和必要分发验证，不等质量测试；Beta 可在安装体验前因 CI 已通过而自动提升。
 - Beta、manifest、SHA 不可覆盖。重试已存在的 Beta 时下载原制品，不重新构建。失败保留候选与 CI 证据；修复后创建新版本，旧版本不覆盖。
 - `release-state` 分支保留最新候选与版本预留。准备候选、移动 Beta feed、正式提升共用 publication concurrency；构建/测试不持有发布锁。发布前核对候选身份及开发 PR 最新 head，已取代候选不得写 feed 或正式版。
 - 自动测试报告到准确候选 SHA，保留原有严格分支保护。CI 成功后以 squash 合入候选 PR，要求合入 tree 与已测试候选 tree 完全一致；有冲突或并发基线变化时停止，不绕过保护，不把不同源码当作同一候选。
 - 正式版从 GitHub 下载 Beta 原制品，验证 manifest 和 SHA，然后发布相同字节；不重新构建、签名或公证。正式标签指向同 tree 的合入 commit，manifest 保留 source/candidate 身份。
-- Git 标签使用每仓库独立 SSH 签名密钥，私钥在 `RELEASE_SIGNING_KEY` Actions Secret，本机恢复入口为 login Keychain 的 service `github-fast-release-signing`、account `oh-my-brew/miniTools`。公钥固定在默认分支 `.github/release-signers`，以 `git verify-tag` 验证。与旧版依赖 GitHub 账号签名登记的验证方式不同，新的签名信任锚是仓库公钥；GitHub 账号未登记该公钥时 UI 可能显示 Unverified，但流水线必须通过固定公钥的密码学验证。
+- 不要求 Git 标签签名，不为此维护额外密钥；正式标签仍不可覆盖，指向受保护合入且 tree 与候选一致的 commit。应用签名、公证及更新签名不受此简化影响。
 - 不再需要发布 subagent、`release-approved` 标签、人工复制候选 SHA 批准或单独 Promote 派发。失败任务可从同一 Actions run 重跑；新源码使用新请求。产品 Release 完成不等待 Tap，不升级设备，不发送飞书通知。
 
 ## 签名、公证与发布资产

@@ -33,7 +33,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: oh-my-infra/brew-ci
-          ref: 4fca0f5f9bdec65901eb52adcb2073479abb2b09
+          ref: ddeb36362b5336f33ca94788884d78d1847ce7c2
           path: .release-automation
           persist-credentials: false
       - name: Reserve latest candidate and isolated version PR
@@ -116,7 +116,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: oh-my-infra/brew-ci
-          ref: 4fca0f5f9bdec65901eb52adcb2073479abb2b09
+          ref: ddeb36362b5336f33ca94788884d78d1847ce7c2
           path: .release-automation
           persist-credentials: false
       - name: Reuse immutable Beta after a retry
@@ -220,7 +220,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: oh-my-infra/brew-ci
-          ref: 4fca0f5f9bdec65901eb52adcb2073479abb2b09
+          ref: ddeb36362b5336f33ca94788884d78d1847ce7c2
           path: .release-automation
           persist-credentials: false
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
@@ -243,7 +243,6 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       RELEASE_JSON: ${{ needs.prepare.outputs.metadata }}
       RELEASE_DIRECTORY: promoted
-      SOURCE_DIRECTORY: ${{ github.workspace }}
     steps:
       - name: Check out trusted default branch and pinned signing identity
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -254,21 +253,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: oh-my-infra/brew-ci
-          ref: 4fca0f5f9bdec65901eb52adcb2073479abb2b09
+          ref: ddeb36362b5336f33ca94788884d78d1847ce7c2
           path: .release-automation
           persist-credentials: false
-      - name: Restore dedicated release signer
-        env:
-          SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
-        run: |
-          set -euo pipefail
-          test -n "$SIGNING_KEY"
-          echo "RELEASE_SIGNING_KEY_FILE=$RUNNER_TEMP/release-signing-key" >> "$GITHUB_ENV"
-          RELEASE_SIGNING_KEY_FILE="$RUNNER_TEMP/release-signing-key"
-          umask 077
-          printf '%s\n' "$SIGNING_KEY" > "$RELEASE_SIGNING_KEY_FILE"
       - name: Protected merge and same-artifact automatic promotion
         run: python3 .release-automation/scripts/fast_release.py promote
-      - name: Remove transient signing key
-        if: always()
-        run: rm -f "$RUNNER_TEMP/release-signing-key"

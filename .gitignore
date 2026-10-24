@@ -9,4 +9,3 @@ AuthKey_*.p8
 __pycache__/
 *.pyc
 .release-automation/
-.release-signing-key
