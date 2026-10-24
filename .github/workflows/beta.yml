@@ -1,180 +1,274 @@
-name: Beta Candidate
-
+name: Fast Beta and Automatic Release
 on:
   workflow_dispatch:
     inputs:
-      source_commit:
-        description: Exact commit to package; must equal the selected workflow ref
+      source_ref:
+        description: Exact source commit at an open development PR head
         required: true
         type: string
-
+  pull_request_target:
+    types: [labeled, synchronize, ready_for_review]
 permissions:
-  contents: write
-
-concurrency:
-  group: product-release
-  cancel-in-progress: false
-
+  contents: read
 jobs:
-  preflight:
-    name: Lock candidate source
-    runs-on: macos-26
+  prepare:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       !github.event.pull_request.draft &&
+       !startsWith(github.event.pull_request.head.ref, 'release/auto-') &&
+       contains(github.event.pull_request.labels.*.name, 'release'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: product-publication
+      cancel-in-progress: false
     outputs:
-      version: ${{ steps.metadata.outputs.version }}
-      candidate_tag: ${{ steps.metadata.outputs.candidate_tag }}
+      candidate: ${{ steps.prepare.outputs.candidate }}
+      version: ${{ steps.prepare.outputs.version }}
+      metadata: ${{ steps.prepare.outputs.metadata }}
     steps:
-      - name: Check out exact workflow source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 0
-
-      - name: Verify isolated version-only candidate
-        id: metadata
+          repository: oh-my-infra/brew-ci
+          ref: 4fca0f5f9bdec65901eb52adcb2073479abb2b09
+          path: .release-automation
+          persist-credentials: false
+      - name: Reserve latest candidate and isolated version PR
+        id: prepare
         env:
-          EXPECTED_COMMIT: ${{ inputs.source_commit }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+          PRODUCT: miniTools
+        run: python3 .release-automation/scripts/fast_release.py prepare
+
+  test:
+    needs: prepare
+    name: Build and test
+    runs-on: macos-26
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.candidate }}
+          persist-credentials: false
+      - name: Candidate tests in parallel with packaging
+        id: tests
         run: |
-          set -euo pipefail
-          actual_commit="$(git rev-parse HEAD)"
-          test "$actual_commit" = "$GITHUB_SHA"
-          test "$actual_commit" = "$EXPECTED_COMMIT"
+          git diff --check
+          plutil -lint Support/Info.plist
+          bash -n Scripts/*.sh
+          python3 -m unittest discover -s Tests/ReleaseWorkflow
+          swift test
+      - name: Report exact candidate result for branch protection
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ needs.prepare.outputs.candidate }}
+          OUTCOME: ${{ steps.tests.outcome }}
+        run: |
+          state=failure
+          if [[ "$OUTCOME" == success ]]; then state=success; fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$CANDIDATE" \
+            -f "state=$state" -f "context=Build and test" \
+            -f "target_url=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
-          git fetch --no-tags origin \
-            "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
-          read -r commit parent extra <<<"$(git rev-list --parents -n 1 "$actual_commit")"
-          test "$commit" = "$actual_commit"
-          if [[ -z "${parent:-}" || -n "${extra:-}" ]]; then
-            echo "Candidate must be one non-merge version commit." >&2
-            exit 1
-          fi
-          if ! git merge-base --is-ancestor "$parent" "origin/$DEFAULT_BRANCH"; then
-            echo "Candidate parent is not present on origin/$DEFAULT_BRANCH." >&2
-            exit 1
-          fi
-
-          changed_files="$(git diff-tree --no-commit-id --name-only -r "$actual_commit")"
-          if [[ "$changed_files" != "Support/Info.plist" ]]; then
-            echo "Candidate may only change Support/Info.plist; found:" >&2
-            printf '%s\n' "$changed_files" >&2
-            exit 1
-          fi
-
-          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Support/Info.plist)"
-          if [[ ! "$version" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[1-9][0-9]*$ ]]; then
-            echo "Invalid candidate version: $version" >&2
-            exit 1
-          fi
-
-          python3 - "$parent" "$version" <<'PY'
-          import pathlib
-          import plistlib
-          import subprocess
-          import sys
-
-          parent, expected_version = sys.argv[1:]
-          previous = plistlib.loads(
-              subprocess.check_output(["git", "show", f"{parent}:Support/Info.plist"])
-          )
-          current = plistlib.loads(pathlib.Path("Support/Info.plist").read_bytes())
-          changed_keys = sorted(
-              key for key in previous.keys() | current.keys()
-              if previous.get(key) != current.get(key)
-          )
-          if changed_keys != ["CFBundleShortVersionString"]:
-              raise SystemExit(
-                  "Support/Info.plist may only change CFBundleShortVersionString; "
-                  f"changed keys: {changed_keys}"
-              )
-          if current["CFBundleShortVersionString"] != expected_version:
-              raise SystemExit("Validated version does not match the plist value")
-          PY
-
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "candidate_tag=v$version-beta.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+  security:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, ruby]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.candidate }}
+          persist-credentials: false
+      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
+        with:
+          languages: ${{ matrix.language }}
+      - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
+        with:
+          category: fast-candidate-${{ matrix.language }}
 
   package:
-    name: Sign and notarize beta
-    needs: preflight
-    uses: oh-my-infra/apple-ci/.github/workflows/macos-developer-id.yml@e8836340e4623133a5ab128c246e81a4b7a4d708
-    with:
-      runner: macos-26
-      lane: beta
-      publish: true
-    secrets:
-      APPLE_ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
-      APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
-      APPLE_ASC_PRIVATE_KEY_BASE64: ${{ secrets.APPLE_ASC_PRIVATE_KEY_BASE64 }}
-      APPLE_MATCH_PASSWORD: ${{ secrets.APPLE_MATCH_PASSWORD }}
-      APPLE_MATCH_GIT_PRIVATE_KEY: ${{ secrets.APPLE_MATCH_GIT_PRIVATE_KEY }}
-
-  publish-feed:
-    name: Publish beta update feed
-    needs: [preflight, package]
+    needs: prepare
     runs-on: macos-26
+    timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
-      SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
-      SPARKLE_VERSION: 2.10.0
-      VERSION: ${{ needs.preflight.outputs.version }}
-      CANDIDATE_TAG: ${{ needs.preflight.outputs.candidate_tag }}
+      RELEASE_JSON: ${{ needs.prepare.outputs.metadata }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      CANDIDATE_COMMIT: ${{ needs.prepare.outputs.candidate }}
     steps:
-      - name: Download immutable candidate and Sparkle tools
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.candidate }}
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: oh-my-infra/brew-ci
+          ref: 4fca0f5f9bdec65901eb52adcb2073479abb2b09
+          path: .release-automation
+          persist-credentials: false
+      - name: Reuse immutable Beta after a retry
+        id: existing
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/archives" "$RUNNER_TEMP/sparkle"
-          gh release download "$CANDIDATE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern "miniTools-$VERSION.zip" \
-            --pattern "miniTools-$VERSION.zip.sha256" \
-            --dir "$RUNNER_TEMP/archives"
-          gh release download "$SPARKLE_VERSION" \
-            --repo sparkle-project/Sparkle \
-            --pattern "Sparkle-$SPARKLE_VERSION.tar.xz" \
-            --dir "$RUNNER_TEMP/sparkle"
-          tar -xJf "$RUNNER_TEMP/sparkle/Sparkle-$SPARKLE_VERSION.tar.xz" \
-            -C "$RUNNER_TEMP/sparkle"
-
-      - name: Verify and generate signed beta appcast
-        run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP/archives"
-          shasum -a 256 -c "miniTools-$VERSION.zip.sha256"
-          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | \
-            "$RUNNER_TEMP/sparkle/bin/generate_appcast" \
-              --ed-key-file - \
-              --download-url-prefix "https://github.com/$GITHUB_REPOSITORY/releases/download/$CANDIDATE_TAG/" \
-              --maximum-versions 1 \
-              "$RUNNER_TEMP/archives"
-          mv appcast.xml appcast-beta.xml
-          test -s appcast-beta.xml
-          grep -q 'sparkle:edSignature=' appcast-beta.xml
-          grep -q "miniTools-$VERSION.zip" appcast-beta.xml
-
-      - name: Complete immutable candidate
-        run: |
-          candidate_notes="$RUNNER_TEMP/candidate-notes.md"
-          gh release view "$CANDIDATE_TAG" --repo "$GITHUB_REPOSITORY" \
-            --json body --jq .body > "$candidate_notes"
-          printf '\nZIP SHA-256: %s\n' "$(cut -d ' ' -f 1 "$RUNNER_TEMP/archives/miniTools-$VERSION.zip.sha256")" >> "$candidate_notes"
-          gh release upload "$CANDIDATE_TAG" \
-            "$RUNNER_TEMP/archives/appcast-beta.xml" \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
-          gh release edit "$CANDIDATE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --draft=false --prerelease --latest=false --notes-file "$candidate_notes"
-
-      - name: Move rolling beta feed
-        run: |
-          set -euo pipefail
-          if gh release view beta --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release delete beta --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+          tag=$(python3 -c 'import json,os;print(json.loads(os.environ["RELEASE_JSON"])["beta_tag"])')
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            mkdir -p dist
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir dist
+            echo "reused=true" >> "$GITHUB_OUTPUT"
           fi
-          gh release create beta \
-            "$RUNNER_TEMP/archives/appcast-beta.xml" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --prerelease --latest=false \
-            --title "miniTools Beta Update Feed" \
-            --notes "Current immutable candidate: $CANDIDATE_TAG"
+      - name: Cache Swift dependencies and compatible build outputs
+        if: steps.existing.outputs.reused != 'true'
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: .build
+          key: release-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-${{ needs.prepare.outputs.candidate }}
+          restore-keys: |
+            release-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b
+        if: steps.existing.outputs.reused != 'true'
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+      - name: Configure readonly Match access
+        if: steps.existing.outputs.reused != 'true'
+        env:
+          MATCH_KEY: ${{ secrets.APPLE_MATCH_GIT_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$RUNNER_TEMP/apple-ci-ssh"
+          printf '%s\n' "$MATCH_KEY" > "$RUNNER_TEMP/apple-ci-ssh/apple-signing"
+          chmod 600 "$RUNNER_TEMP/apple-ci-ssh/apple-signing"
+          ssh-keyscan -t ed25519 github.com > "$RUNNER_TEMP/apple-ci-ssh/known_hosts"
+          echo "MATCH_GIT_PRIVATE_KEY=$RUNNER_TEMP/apple-ci-ssh/apple-signing" >> "$GITHUB_ENV"
+          echo "GIT_SSH_COMMAND=ssh -i $RUNNER_TEMP/apple-ci-ssh/apple-signing -o IdentitiesOnly=yes -o UserKnownHostsFile=$RUNNER_TEMP/apple-ci-ssh/known_hosts" >> "$GITHUB_ENV"
+      - name: Build, sign and notarize immediately; quality tests are separate
+        if: steps.existing.outputs.reused != 'true'
+        env:
+          APPLE_ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          APPLE_ASC_PRIVATE_KEY_BASE64: ${{ secrets.APPLE_ASC_PRIVATE_KEY_BASE64 }}
+          MATCH_PASSWORD: ${{ secrets.APPLE_MATCH_PASSWORD }}
+          APPLE_CI_PUBLISH: 'false'
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+        run: bundle exec fastlane fast_beta
+      - name: Generate signed Beta and stable update feeds from the same ZIP
+        if: steps.existing.outputs.reused != 'true'
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sparkle"
+          gh release download 2.10.0 --repo sparkle-project/Sparkle --pattern Sparkle-2.10.0.tar.xz --dir "$RUNNER_TEMP/sparkle"
+          tar -xJf "$RUNNER_TEMP/sparkle/Sparkle-2.10.0.tar.xz" -C "$RUNNER_TEMP/sparkle"
+          beta_tag=$(python3 -c 'import json,os;print(json.loads(os.environ["RELEASE_JSON"])["beta_tag"])')
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | "$RUNNER_TEMP/sparkle/bin/generate_appcast" --ed-key-file - \
+            --download-url-prefix "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION/" --maximum-versions 1 dist
+          mv dist/appcast.xml "$RUNNER_TEMP/stable-appcast.xml"
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | "$RUNNER_TEMP/sparkle/bin/generate_appcast" --ed-key-file - \
+            --download-url-prefix "https://github.com/$GITHUB_REPOSITORY/releases/download/$beta_tag/" --maximum-versions 1 dist
+          mv dist/appcast.xml dist/appcast-beta.xml
+          cp "$RUNNER_TEMP/stable-appcast.xml" dist/appcast.xml
+          grep -q 'sparkle:edSignature=' dist/appcast.xml
+          grep -q 'sparkle:edSignature=' dist/appcast-beta.xml
+      - name: Remove transient Apple credentials
+        if: always()
+        run: |
+          rm -rf "$RUNNER_TEMP/apple-ci-ssh"
+          rm -f "$RUNNER_TEMP"/AuthKey_*.p8
 
+      - name: Record immutable artifact identity
+        if: steps.existing.outputs.reused != 'true'
+        run: python3 .release-automation/scripts/fast_release.py manifest
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: candidate-${{ github.run_id }}
+          retention-days: 7
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256
+            dist/release-manifest.json
+            dist/appcast*.xml
+          if-no-files-found: error
+
+  beta:
+    needs: [prepare, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    concurrency:
+      group: product-publication
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_JSON: ${{ needs.prepare.outputs.metadata }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: oh-my-infra/brew-ci
+          ref: 4fca0f5f9bdec65901eb52adcb2073479abb2b09
+          path: .release-automation
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: candidate-${{ github.run_id }}
+          path: dist
+      - name: Publish installable Beta without waiting for quality jobs
+        run: python3 .release-automation/scripts/fast_release.py beta
+
+  promote:
+    needs: [prepare, test, security, beta]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: product-publication
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_JSON: ${{ needs.prepare.outputs.metadata }}
+      RELEASE_DIRECTORY: promoted
+      SOURCE_DIRECTORY: ${{ github.workspace }}
+    steps:
+      - name: Check out trusted default branch and pinned signing identity
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: master
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: oh-my-infra/brew-ci
+          ref: 4fca0f5f9bdec65901eb52adcb2073479abb2b09
+          path: .release-automation
+          persist-credentials: false
+      - name: Restore dedicated release signer
+        env:
+          SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$SIGNING_KEY"
+          echo "RELEASE_SIGNING_KEY_FILE=$RUNNER_TEMP/release-signing-key" >> "$GITHUB_ENV"
+          RELEASE_SIGNING_KEY_FILE="$RUNNER_TEMP/release-signing-key"
+          umask 077
+          printf '%s\n' "$SIGNING_KEY" > "$RELEASE_SIGNING_KEY_FILE"
+      - name: Protected merge and same-artifact automatic promotion
+        run: python3 .release-automation/scripts/fast_release.py promote
+      - name: Remove transient signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release-signing-key"
