@@ -96,12 +96,12 @@ swift test
 
 ## 发行与 Homebrew
 
-源码 CI 通过后，可由独立的 beta 发行流程构建 arm64 应用，完成 Developer ID 签名和
-Apple 公证并发布不可变候选。状态菜单中的“检查 Beta 更新…”用于手动体验最新候选；
-“检查更新…”仍只安装 GitHub Latest 中的稳定版本。候选经用户明确批准后，同一 ZIP 会在
-校验签名、公证和 SHA-256 后提升为正式 Release，不重新构建。两个通道都不会后台自动检查。
-Homebrew Tap 只定期检查稳定 Release，通过 Autobump PR 更新 Cask。签名配置和发版步骤见
-[DISTRIBUTION.md](DISTRIBUTION.md)。
+从准确源码创建独立候选，arm64构建、Developer ID签名、Apple公证与质量检查并行。
+Beta可安装后即可体验；必需检查通过后自动将同一ZIP提升为正式Release，不等待人工批准，
+不重新构建、签名或公证。已取代候选不得提升。
+
+“检查 Beta 更新…”体验候选，“检查更新…”读取稳定Release；两个通道都不后台自动检查。
+Tap独立定时发现稳定版本。签名、候选身份和失败恢复见 [DISTRIBUTION.md](DISTRIBUTION.md)。
 
 ## 代码结构
 
@@ -123,7 +123,3 @@ Homebrew Tap 只定期检查稳定 Release，通过 Autobump PR 更新 Cask。�
 全部动画图稿的再分发权利。
 
 编码与转换面板严格读取剪贴板的第一个元素。图片识别使用 Vision，首次处理大图时可能需要短暂等待；识别期间仍可直接选择格式转换或压缩操作。
-
-未批准的旧 Beta 候选会在创建后续源码候选时自动被取代；已发布候选的 Release、标签和安装包保持不变。已批准的候选与正在运行的发行会阻塞自动替代。
-
-发行采用可安装 Beta 与并行质量检查，通过后自动将原 ZIP 提升为正式版，不再等待人工批准。见 [DISTRIBUTION.md](DISTRIBUTION.md)。
