@@ -32,7 +32,7 @@ def mini_tools_release_context(channel:)
     [root, app_version, tag]
 end
 
-def mini_tools_package(channel:, publish:)
+def mini_tools_package(channel:, publish:, validate: true)
     root, version, tag = mini_tools_release_context(channel: channel)
     run_number = ENV.fetch("GITHUB_RUN_NUMBER", "").strip
     UI.user_error!("GITHUB_RUN_NUMBER is required") unless run_number.match?(/^[1-9]\d*$/)
@@ -44,13 +44,13 @@ def mini_tools_package(channel:, publish:)
     escaped_tag = Shellwords.escape(tag)
     notes_path = File.join(ENV.fetch("RUNNER_TEMP", Dir.tmpdir), "miniTools-#{channel}-release-notes.md")
     notes = if channel == :beta
-      candidate_commit = ENV.fetch("GITHUB_SHA")
+      candidate_commit = ENV.fetch("CANDIDATE_COMMIT", ENV.fetch("GITHUB_SHA"))
       source_commit = MiniToolsReleaseMetadata.source_commit(root: root, candidate_commit: candidate_commit)
       "Source commit: #{source_commit}\n" \
         "Candidate commit: #{candidate_commit}\n" \
         "Candidate tag: #{tag}\n\n" \
         "It is signed with Developer ID and notarized by Apple, but must not be promoted " \
-        "without explicit user approval.\n"
+        "until its exact candidate checks pass.\n"
     else
       "This build is signed with Developer ID and notarized by Apple.\n\n" \
         "Accessibility permission is required for Safari window switching and window management; " \
@@ -101,7 +101,7 @@ def mini_tools_package(channel:, publish:)
     ENV["APP_VERSION"] = version
     shared_macos_developer_id(
       app_identifiers: ["com.omzcj.minitools"],
-      validation_command: "cd #{escaped_root} && bash -n Scripts/*.sh && swift test",
+      validation_command: validate ? "cd #{escaped_root} && bash -n Scripts/*.sh && swift test" : "",
       package_command: "cd #{escaped_root} && APP_BUILD=#{escaped_build_version} Scripts/package-release.sh #{escaped_version}",
       notarize_command: "cd #{escaped_root} && Scripts/notarize-release.sh #{escaped_version}",
       release_command: release_command,
@@ -110,6 +110,11 @@ def mini_tools_package(channel:, publish:)
 end
 
 platform :mac do
+  desc "Build signed and notarized Beta without waiting for quality checks"
+  lane :fast_beta do
+    mini_tools_package(channel: :beta, publish: false, validate: false)
+  end
+
   desc "Build, sign, notarize, and optionally publish miniTools"
   lane :release do
     _, _, expected_tag = mini_tools_release_context(channel: :stable)

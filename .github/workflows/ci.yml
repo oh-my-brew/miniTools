@@ -41,10 +41,3 @@ jobs:
 
       - name: Run tests
         run: swift test
-
-      - name: Build arm64 release
-        run: |
-          swift build \
-            -c release \
-            --triple arm64-apple-macosx26.0 \
-            --scratch-path .build/ci-arm64

@@ -1,107 +1,34 @@
-# 产品发行与应用内更新
+# miniTools 自动发行
 
-## 候选 beta
+## 自动发行（2026-10-25 用户决定）
 
-开发代码进入 `master` 且源码 CI 通过后，后台 Beta Release subagent 使用独立 worktree：
+开发完成后立即从固定源码提交启动 `.github/workflows/beta.yml`，不等源码 CI 或人工体验确认。
+同仓库、非 draft 的开发 PR 添加 `release` 标签后，后续 source 更新会自动请求新候选；
+也可由仓库 writer 对本仓库分支的准确 head 派发：
 
-先在已 fetch 的独立 worktree 中执行：
-
-```bash
-python3 Scripts/beta-preflight.py --source <完整开发源码SHA>
-python3 Scripts/beta-preflight.py --source <完整开发源码SHA> --apply
+```sh
+gh workflow run beta.yml --ref master --field source_ref=<40位准确源码SHA>
 ```
 
-脚本默认只输出计划。`--apply` 重新检查所有条件后关闭被取代 PR；任何非零退出码均停止发行。
-同源码候选复用；失败时在原候选 commit 重跑 workflow。未批准且源码是新源码祖先的旧候选
-自动关闭并注明 superseded，Release 和标签永久保留。分叉、批准状态不明或非版本改动均停止。
-`release-approved` PR 标签保护用户已经批准的候选；Beta/Promote 在运行、排队或等待时也阻塞。
-两条 workflow 共用 `product-release` concurrency，签名与提升不会并发。GitHub concurrency
-不保证 FIFO；重新开始任务必须重新检查目标源码，不能依赖旧计划。
+- 受信任默认分支 workflow 调用固定 SHA 的 brew-ci 协调脚本，创建独立 `release/auto-<run-id>` 分支与候选 PR，不回写开发分支或本地工作树。以当前默认分支合入请求源码后分配新的 `YYYY.MM.DD.N`，候选 PR 指向准确 commit/tree。组织允许相关权限，只在这两个产品仓库启用 Actions 创建候选 PR。
+- 包构建与单元/回归测试、CodeQL 快速语言扫描并行。Beta 只等包和必要分发验证，不等质量测试；Beta 可在安装体验前因 CI 已通过而自动提升。
+- Beta、manifest、SHA 不可覆盖。重试已存在的 Beta 时下载原制品，不重新构建。失败保留候选与 CI 证据；修复后创建新版本，旧版本不覆盖。
+- `release-state` 分支保留最新候选与版本预留。准备候选、移动 Beta feed、正式提升共用 publication concurrency；构建/测试不持有发布锁。发布前核对候选身份及开发 PR 最新 head，已取代候选不得写 feed 或正式版。
+- 自动测试报告到准确候选 SHA，保留原有严格分支保护。CI 成功后以 squash 合入候选 PR，要求合入 tree 与已测试候选 tree 完全一致；有冲突或并发基线变化时停止，不绕过保护，不把不同源码当作同一候选。
+- 正式版从 GitHub 下载 Beta 原制品，验证 manifest 和 SHA，然后发布相同字节；不重新构建、签名或公证。正式标签指向同 tree 的合入 commit，manifest 保留 source/candidate 身份。
+- 不要求 Git 标签签名，不为此维护额外密钥；正式标签仍不可覆盖，指向受保护合入且 tree 与候选一致的 commit。应用签名、公证及更新签名不受此简化影响。
+- 不再需要发布 subagent、`release-approved` 标签、人工复制候选 SHA 批准或单独 Promote 派发。失败任务可从同一 Actions run 重跑；新源码使用新请求。产品 Release 完成不等待 Tap，不升级设备，不发送飞书通知。
 
-preflight 输出 `target_version` 时复用该目标四段版本，多个 Beta 仅以 `beta.RUN_NUMBER`
-及内部 `CFBundleVersion` 区分。正式发布前（包括跨日修复）不递增目标版本；正式发布后才
-分配下一版本。输出为空时按日期版本规则分配未占用版本，多个目标版本或已存在正式标签时停止。
-新候选分支可用 `release/miniTools-YYYY.MM.DD.N-<source-short-sha>`，不能强推改写旧候选提交。
-应用继续只展示四段版本，不增加构建号或 Beta 状态显示。
+## 签名、公证与发布资产
 
-1. 从远端默认分支中的准确开发 commit 创建单一候选 commit，只修改 `Support/Info.plist` 的 `CFBundleShortVersionString` 四段版本字段。
-2. 以候选 commit 派发 `Beta Candidate` workflow，并把同一 commit 作为 `source_commit` 输入。
-3. CI 运行测试，构建 arm64 主程序及 helper，完成 Developer ID 签名、Apple 公证、staple、Gatekeeper 和 SHA-256 校验。
-4. 创建不可变的 `vYYYY.MM.DD.N-beta.RUN_NUMBER` prerelease，上传 ZIP、校验文件和签名 beta appcast。
-5. 更新可移动的 `beta` prerelease 中的 `appcast-beta.xml`；它只指向不可变候选资产。
-6. 回报候选标签、准确源码 commit 和 ZIP SHA-256，不自动提升正式版。
+`fast_beta` lane 复用只读 Fastlane Match 和固定版本 apple-ci，先构建 arm64 主应用及 helper、
+使用 Developer ID 签名，再执行 Apple 公证、staple、Gatekeeper 检查；质量测试单独并行。
+Swift/Ruby 依赖与兼容构建输出可缓存，Apple 凭据和签名身份不进入缓存或普通 Artifact。
 
-候选分支推送后，使用准确 commit 派发，不允许用会继续移动的分支名充当身份：
-
-```bash
-candidate_commit="$(git rev-parse HEAD)"
-gh workflow run beta.yml \
-  --ref "release/miniTools-YYYY.MM.DD.N-<source-short-sha>" \
-  -f "source_commit=$candidate_commit"
-```
-
-Workflow 的 preflight 会要求 checkout、事件 `GITHUB_SHA` 和 `source_commit` 三者完全相同；候选必须是非 merge 的单一版本 commit，其父提交已经位于远端默认分支，且相对父提交只能修改 `Support/Info.plist` 的 `CFBundleShortVersionString`。这些检查在任何签名、公证凭据进入 job 前完成。
-独立打包 job 不继承 preflight 的完整 Git 历史。发布说明使用锁定 commit 对象的原始
-`parent` 字段读取来源 SHA（兼容 depth=1），同时校验 checkout SHA 和唯一父提交；不执行
-`HEAD^` 遍历，也不静默省略来源。preflight 的完整历史和版本隔离校验保持原要求。
-
-候选 PR 在体验期间保持打开，但 Open 本身不构成发行锁；beta 失败只修复候选流程或创建下一候选，不得创建正式标签。
-
-共享发布流程和 Fastlane lanes 来自 `oh-my-infra/apple-ci`；workflow 固定完整
-commit SHA，Fastfile 固定对应的 `v2026.09.12.1` 签名标签。应用发布结果位于
-`oh-my-brew/miniTools`。
-
-`Release` workflow 只保留 `publish=false` 的签名、公证诊断能力，不负责正式发布。
-
-Release workflow 使用以下 GitHub Actions Secrets：
-
-- `APPLE_ASC_KEY_ID`
-- `APPLE_ASC_ISSUER_ID`
-- `APPLE_ASC_PRIVATE_KEY_BASE64`
-- `APPLE_MATCH_PASSWORD`
-- `APPLE_MATCH_GIT_PRIVATE_KEY`
-- `SPARKLE_ED_PRIVATE_KEY`
-
-CI 通过只读 Fastlane Match 恢复 Developer ID 身份，不再保存项目级 P12。
-
-候选 Release 包含：
-
-- `miniTools-YYYY.MM.DD.N.zip`
-- `miniTools-YYYY.MM.DD.N.zip.sha256`
-- `appcast-beta.xml`
-
-## 提升正式版本
-
-用户明确批准某个 beta 后，后台 Promote subagent：
-
-1. 主会话先在候选 PR 正文记录用户批准证据、候选标签、候选 commit 与 ZIP SHA-256，并添加 `release-approved` 标签（仅记录明确批准，不自行授予批准）。Promote subagent 核对该记录、PR 未被取代且仍 Open 或已合并，让原候选 commit 进入远端默认分支（保留该 commit，不使用会改写 commit 的 squash）。
-2. 在原候选 commit 上创建并推送签名 annotated 标签 `vYYYY.MM.DD.N`；不得让标签指向重新构建的其他 commit。
-3. 派发 `Promote Beta Candidate` workflow，输入候选标签和预期 SHA-256。
-4. Workflow 明确抓取远端默认分支，验证它包含候选 commit、候选仍为 prerelease、正式标签签名有效且指向候选 commit，并重新检查 ZIP 摘要、Developer ID 签名、公证 ticket、Gatekeeper 和 arm64 架构。
-5. 从候选 Release 下载原 ZIP，以稳定 Release URL 重新生成签名 `appcast.xml`，将同一 ZIP、同一校验文件和稳定 appcast 一次发布为正式 Release。
-
-签名标签推送后，从默认分支派发提升流程：
-
-```bash
-gh workflow run promote.yml \
-  --ref master \
-  -f "candidate_tag=vYYYY.MM.DD.N-beta.RUN_NUMBER" \
-  -f "expected_sha256=<用户批准候选的 64 位 SHA-256>"
-```
-
-`expected_sha256` 必须在用户批准时从候选校验文件记录，不能在提升时静默改用远端的新值。
-
-标签必须使用 `vYYYY.MM.DD.N`，并与 Info.plist 中的可见版本完全一致；`N` 从
-`1` 开始，同一天再次发布时依次递增。GitHub Release、应用内显示版本、发布文件和 Homebrew
-Cask 均使用完整四段版本。标签必须是签名的 annotated tag；用户批准和正式提升允许跨天，
-不要求 tagger 日期等于版本日期。正式提升不得重新构建或重新公证；
-`CFBundleVersion` 保留 beta 构建时的 `YYYYMMDD.N.RUN_NUMBER`。这个值跨旧的稳定 Release
-workflow 和新的 beta workflow 单调递增，避免两个 workflow 各自从 `1` 开始计数后，
-Sparkle 把新 beta 误判为旧构建。
-
-候选 PR 和 Release 统一记录 `Source commit`（候选的父提交）、`Candidate commit`、
-候选标签与 ZIP SHA-256；Release 构建时写入来源，完成后将资产身份补齐到 PR。
-已关闭且未合并的候选视为已取代，不得正式提升；需要重新批准时创建有效候选。
+每个不可变 Beta 包含 ZIP、SHA-256、release-manifest.json、签名 appcast-beta.xml 与稳定
+appcast.xml。两个 feed 都在同一次签名构建后生成，正式提升只复制对应资产。
+滚动 `beta` Release 只更新 feed；不可变候选不移动。完整验收保留 tag、run、tree、SHA、
+Developer ID、公证、helper、arm64 和 Sparkle 签名证据，不启动本地应用。
 
 ## 更新渠道
 
@@ -157,3 +84,7 @@ signpost 记录固定阶段名、耗时和节点数量，不记录标题、URL�
 实际响应时间已经改善，交付时需保留运行时未验证说明。
 
 Safari 最小化恢复的自动测试注入 AX 状态、返回码、时钟与等待，覆盖延迟恢复、超时后实际成功、有限重试、永久失败、批量继续和面板关闭取消；不操作真实 Safari。Dock 动画、真实焦点切换和应用内更新仍需用户体验，不能由测试或公证结果代替。
+
+Swift 常规 CI 保留单元测试所需编译；发行配置的 arm64 构建由快速出包 job 负责，避免
+在 CI 和发行路径重复构建同一 Release。主应用/Helper 的真实权限与交互仍由用户体验，
+自动发布不宣称这些运行时行为已人工验收。
