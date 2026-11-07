@@ -81,62 +81,6 @@ enum WindowLayoutService {
         }.value
     }
 
-    static func applyComposedSize(_ target: ComposedWindowSizeTarget) async throws {
-        try AccessibilityAuthorization.requirePermission()
-        let application = try await activeApplication()
-        let geometries = await WindowGeometry.screenGeometries()
-
-        try await Task.detached(priority: .userInitiated) {
-            let window = try focusedWindow(for: application)
-            try ensureWindowCanBeAdjusted(window)
-
-            let currentFrame = try frame(of: window, for: application)
-            let visibleFrame = WindowGeometry.screenGeometry(
-                for: currentFrame,
-                geometries: geometries
-            ).visibleFrame
-            try setFrame(
-                WindowGeometry.targetFrame(for: target.frame, in: visibleFrame),
-                of: window,
-                visibleFrame: visibleFrame,
-                processIdentifier: application.processIdentifier
-            )
-        }.value
-    }
-
-    static func applyComposedPlacement(
-        _ placement: ComposedWindowPlacement
-    ) async throws -> ComposedWindowPlacementTarget? {
-        try AccessibilityAuthorization.requirePermission()
-        let application = try await activeApplication()
-        let geometries = await WindowGeometry.screenGeometries()
-
-        return try await Task.detached(priority: .userInitiated) {
-            let window = try focusedWindow(for: application)
-            try ensureWindowCanBeAdjusted(window)
-
-            let currentFrame = try frame(of: window, for: application)
-            let visibleFrame = WindowGeometry.screenGeometry(
-                for: currentFrame,
-                geometries: geometries
-            ).visibleFrame
-            guard let target = WindowGeometry.composedPlacementTarget(
-                currentFrame: currentFrame,
-                visibleFrame: visibleFrame,
-                placement: placement
-            ) else {
-                return nil
-            }
-            try correctPositionUntilStable(
-                initialFrame: currentFrame,
-                targetFrame: target.frame,
-                window: window,
-                processIdentifier: application.processIdentifier
-            )
-            return target
-        }.value
-    }
-
     static func moveFocusedWindowToNextScreen() async throws -> WindowActionOutcome {
         try AccessibilityAuthorization.requirePermission()
         let application = try await activeApplication()

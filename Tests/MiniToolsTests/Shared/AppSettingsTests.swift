@@ -151,71 +151,40 @@ final class AppSettingsTests: XCTestCase {
     }
 
     @MainActor
-    func testWindowManagementModeDefaultsToClassicAndPersistsNewMode() throws {
+    func testRetiredLayoutSettingsDoNotOverrideClassicShortcutsOrMouseBindings() throws {
         let (defaults, suiteName) = try makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let settings = AppSettings(defaults: defaults)
-
-        XCTAssertEqual(settings.windowManagementMode, .classic)
-
-        settings.updateWindowManagementMode(.sizeAndPosition)
-
-        XCTAssertEqual(
-            AppSettings(defaults: defaults).windowManagementMode,
-            .sizeAndPosition
-        )
-    }
-
-    @MainActor
-    func testWindowLongPressThresholdDefaultsTo200MillisecondsAndPersists() throws {
-        let (defaults, suiteName) = try makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let settings = AppSettings(defaults: defaults)
-
-        XCTAssertEqual(settings.windowLongPressThresholdMilliseconds, 200)
-
-        settings.updateWindowLongPressThresholdMilliseconds(275)
-
-        XCTAssertEqual(
-            AppSettings(defaults: defaults).windowLongPressThresholdMilliseconds,
-            275
-        )
-    }
-
-    @MainActor
-    func testWindowLongPressThresholdStaysWithinSupportedRange() throws {
-        let (defaults, suiteName) = try makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let settings = AppSettings(defaults: defaults)
-
-        settings.updateWindowLongPressThresholdMilliseconds(50)
-        XCTAssertEqual(settings.windowLongPressThresholdMilliseconds, 100)
-
-        settings.updateWindowLongPressThresholdMilliseconds(900)
-        XCTAssertEqual(settings.windowLongPressThresholdMilliseconds, 600)
-    }
-
-    @MainActor
-    func testPersistsComposedWindowControlShortcutSeparately() throws {
-        let (defaults, suiteName) = try makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let settings = AppSettings(defaults: defaults)
         let shortcut = KeyboardShortcut(
             keyCode: UInt32(kVK_ANSI_M),
             carbonModifiers: UInt32(controlKey | optionKey)
         )
+        let settings = AppSettings(defaults: defaults)
+        settings.updateWindowControlShortcut(shortcut, for: .upperLeft)
+        settings.updateWindowControlShortcut(shortcut, for: .moveWindowToNextScreen)
 
-        settings.updateComposedWindowControlShortcut(shortcut, for: .fullOrHalfHeight)
+        settings.updateMouseCommand(
+            .windowControl(.upperLeft),
+            for: .button4,
+            gesture: .singleClick
+        )
+
+        // A previous installation selected the removed scheme and configured long press.
+        defaults.set("sizeAndPosition", forKey: "windowManagementMode")
+        defaults.set(600, forKey: "windowLongPressThresholdMilliseconds")
+        defaults.set(
+            try JSONEncoder().encode(["fullOrHalfHeight": KeyboardShortcut.panelDefault]),
+            forKey: "composedWindowControlShortcuts"
+        )
 
         let restored = AppSettings(defaults: defaults)
+        XCTAssertEqual(restored.windowControlShortcut(for: .upperLeft), shortcut)
+        XCTAssertEqual(restored.windowControlShortcut(for: .moveWindowToNextScreen), shortcut)
         XCTAssertEqual(
-            restored.composedWindowControlShortcut(for: .fullOrHalfHeight),
-            shortcut
+            restored.windowControlShortcut(for: .lowerRight),
+            WindowControlCatalog.defaultShortcuts[.lowerRight]
         )
-        XCTAssertEqual(
-            restored.windowControlShortcut(for: .upperLeft),
-            WindowControlCatalog.defaultShortcuts[.upperLeft]
-        )
+        XCTAssertEqual(restored.mouseBindings, settings.mouseBindings)
+        XCTAssertEqual(restored.cursorHighlightStyles, settings.cursorHighlightStyles)
     }
 
     @MainActor
