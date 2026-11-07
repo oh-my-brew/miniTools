@@ -101,7 +101,7 @@ def mini_tools_package(channel:, publish:, validate: true)
     ENV["APP_VERSION"] = version
     shared_macos_developer_id(
       app_identifiers: ["com.omzcj.minitools"],
-      validation_command: validate ? "cd #{escaped_root} && bash -n Scripts/*.sh && swift test" : "",
+      validation_command: validate ? "cd #{escaped_root} && bash Scripts/ci-check.sh" : "",
       package_command: "cd #{escaped_root} && APP_BUILD=#{escaped_build_version} Scripts/package-release.sh #{escaped_version}",
       notarize_command: "cd #{escaped_root} && Scripts/notarize-release.sh #{escaped_version}",
       release_command: release_command,
