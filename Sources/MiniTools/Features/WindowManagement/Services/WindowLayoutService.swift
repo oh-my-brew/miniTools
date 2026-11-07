@@ -105,13 +105,45 @@ enum WindowLayoutService {
             let processID: pid_t
         }
         var intent: Intent?
+        private let observationQueue = DispatchQueue(label: "com.omzcj.minitools.window-observation", qos: .utility)
+
+        // Only reads cross to this queue; it never issues window/animation writes.
+        // All trace data are value snapshots, not the mutable worker trace.
+        private struct Observation: @unchecked Sendable {
+            let window: AXUIElement
+            let windowID: CGWindowID?
+            let processID: pid_t
+            let ticket: UInt64
+            let requestedAt: TimeInterval
+            let record: WindowAdjustmentTrace.Record
+            let readAccessibility: Bool
+        }
+
+        private func scheduleObservations(_ observation: Observation) {
+            for milliseconds in [250, 750] {
+                observationQueue.asyncAfter(deadline: .now() + .milliseconds(milliseconds)) {
+                    guard gate.isCurrent(observation.ticket) else { return }
+                    let server = observation.windowID.flatMap {
+                        WindowServerWindowInspector.frame(windowID: $0, processIdentifier: observation.processID)
+                    }
+                    let ax = observation.readAccessibility ? try? readFrame(of: observation.window) : nil
+                    guard gate.isCurrent(observation.ticket) else { return }
+                    WindowAdjustmentTrace.appendObservation(
+                        from: observation.record, phase: "after\(milliseconds)ms",
+                        elapsedMS: (ProcessInfo.processInfo.systemUptime - observation.requestedAt) * 1000,
+                        accessibility: ax, windowServer: server
+                    )
+                }
+            }
+        }
 
         func execute(
             _ action: Action,
             frontmost: pid_t?,
             geometries: [WindowLayoutScreenGeometry],
             ticket: UInt64,
-            requestedAt: TimeInterval
+            requestedAt: TimeInterval,
+            assistiveTechnologyEnabled: Bool
         ) throws -> WindowActionOutcome {
             let trace = WindowAdjustmentTrace(command: action.id.rawValue, requestedAt: requestedAt)
             var lastFrame: CGRect?
@@ -146,7 +178,8 @@ enum WindowLayoutService {
                 trace.event("readInitialFrame")
                 let axFrame = try readFrame(of: window)
                 let windowID = WindowServerWindowInspector.matchingWindowID(
-                    processIdentifier: application.processIdentifier, accessibilityFrame: axFrame
+                    processIdentifier: application.processIdentifier, accessibilityFrame: axFrame,
+                    diagnostic: { trace.event($0, frame: $1) }
                 )
                 trace.identify(processID: application.processIdentifier,
                                application: application.bundleIdentifier, windowID: windowID,
@@ -164,6 +197,9 @@ enum WindowLayoutService {
                     lastFrame = value
                     return value
                 }
+                trace.event("initialAccessibilityFrame", frame: axFrame)
+                let policy = WindowAdjustmentPolicy.resolve(bundleIdentifier: application.bundleIdentifier)
+                trace.event(policy.rawValue)
                 let current = try read()
                 let visible = WindowGeometry.screenGeometry(for: current, geometries: geometries).visibleFrame
                 var target: CGRect
@@ -198,28 +234,52 @@ enum WindowLayoutService {
                 trace.plan(initial: current, target: target, visible: destination)
                 trace.event("resolved", frame: current)
                 try gate.check(ticket)
-                let result = try WindowFrameAdjustment.run(
-                    target: target,
-                    read: read,
-                    position: { point in
-                        try gate.check(ticket)
-                        trace.event("writePositionRequested")
-                        let status = try setPosition(point, of: window)
-                        trace.event("writePosition", axStatus: status.rawValue)
-                        try gate.check(ticket)
-                    },
-                    size: { size in
-                        try gate.check(ticket)
-                        trace.event("writeSizeRequested")
-                        let status = try setSize(size, of: window)
-                        trace.event("writeSize", axStatus: status.rawValue)
-                        try gate.check(ticket)
-                    },
-                    check: { try gate.check(ticket) }, trace: trace
-                )
+                let adjust: (Bool) throws -> WindowFrameAdjustment.Result = { suppressed in
+                    try WindowFrameAdjustment.run(
+                        target: target,
+                        read: read,
+                        position: { point in
+                            try gate.check(ticket)
+                            trace.event("writePositionRequested")
+                            let status = try setPosition(point, of: window)
+                            trace.event("writePosition", axStatus: status.rawValue)
+                            try gate.check(ticket)
+                        },
+                        size: { size in
+                            try gate.check(ticket)
+                            trace.event("writeSizeRequested")
+                            let status = try setSize(size, of: window)
+                            trace.event("writeSize", axStatus: status.rawValue)
+                            try gate.check(ticket)
+                        },
+                        check: { try gate.check(ticket) }, trace: trace,
+                        policy: policy, initial: current,
+                        placement: { if case .nextScreen = action { return nil }
+                                     return WindowFramePlacement(target: target, visible: destination) }(),
+                        authoritativeRead: windowID != nil, animationsSuppressed: suppressed
+                    )
+                }
+                let result: WindowFrameAdjustment.Result
+                if policy == .compatible {
+                    let appElement = AccessibilityClient.application(for: application.processIdentifier, timeout: 0.25)
+                    let attribute = "AXEnhancedUserInterface" as CFString
+                    result = try WindowAnimationScope.run(
+                        assistiveTechnologyEnabled: assistiveTechnologyEnabled,
+                        read: { AccessibilityClient.boolean(from: appElement, attribute: attribute) },
+                        write: { AccessibilityClient.setValue($0 ? kCFBooleanTrue! : kCFBooleanFalse!,
+                                                             on: appElement, attribute: attribute).rawValue },
+                        trace: trace, body: adjust
+                    )
+                } else {
+                    result = try adjust(false)
+                }
                 try gate.check(ticket)
                 lastFrame = result.frame
                 trace.finish(result.outcome.rawValue, frame: result.frame)
+                scheduleObservations(Observation(window: window, windowID: windowID,
+                    processID: application.processIdentifier, ticket: ticket,
+                    requestedAt: requestedAt, record: trace.snapshot(),
+                    readAccessibility: policy == .compatible || windowID == nil))
                 return WindowActionOutcome(candidateIndex: candidateIndex,
                                            didReachTarget: result.outcome == .applied)
             } catch is CancellationError {
@@ -271,13 +331,15 @@ enum WindowLayoutService {
         let requestedAt = ProcessInfo.processInfo.systemUptime
         let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let geometries = WindowGeometry.screenGeometries()
+        let assistiveTechnologyEnabled = NSWorkspace.shared.isVoiceOverEnabled || NSWorkspace.shared.isSwitchControlEnabled
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 worker.queue.async {
                     do {
                         continuation.resume(returning: try worker.execute(
                             action, frontmost: frontmost, geometries: geometries,
-                            ticket: ticket, requestedAt: requestedAt
+                            ticket: ticket, requestedAt: requestedAt,
+                            assistiveTechnologyEnabled: assistiveTechnologyEnabled
                         ))
                     } catch {
                         continuation.resume(throwing: error)
