@@ -29,8 +29,9 @@ enum AccessibilityAuthorization {
 }
 
 enum AccessibilityClient {
-    static func systemFocusedProcessIdentifier() -> pid_t? {
+    static func systemFocusedProcessIdentifier(timeout: Float? = nil) -> pid_t? {
         let systemWide = AXUIElementCreateSystemWide()
+        if let timeout { AXUIElementSetMessagingTimeout(systemWide, timeout) }
         guard let focusedElement = element(
             from: systemWide,
             attribute: kAXFocusedUIElementAttribute as CFString

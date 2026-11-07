@@ -47,7 +47,7 @@ CODE_SIGN_IDENTITY="Apple Development: Name (TEAMID)" ./Scripts/build-app.sh
 - `.github/workflows/ci.yml` 在源码 PR、主分支推送及手动派发时运行 `Scripts/ci-check.sh`。
 - `.github/workflows/beta.yml` 对准确候选 SHA 运行同一检查入口，与签名打包并行；测试或安全检查失败不得提升正式版。
 - `Scripts/ci-check.sh` 统一执行工具链报告、`git diff --check`、Info.plist 校验、Shell 语法检查、发行回归测试和 `swift test`。架构或依赖变化时，在 Actions 补充 arm64 release 构建验证。
-- UI、快捷键、AX、鼠标监听变更需补充可隔离单元测试；测试不得启动应用、操作真实剪贴板、Safari、系统设置或发送真实输入。
+- UI、快捷键、AX、鼠标监听变更需补充可隔离单元测试；测试不得启动应用、操作真实剪贴板、Safari、系统设置或发送真实输入。窗口调整通过内存矩形和伪读写验证，不安装第三方应用、不增加 GUI 自动化、CI job 或矩阵；真实流畅度与到位情况由用户体验反馈。
 - 本地仅做源码审阅、Git 状态和 `git diff --check` 等无需 macOS 的轻量检查；提交不以本地 Swift 测试为前置条件。交付须记录实际源码/候选 SHA、Actions run 和结果，不能用其他提交的成功结果代替。
 - 发行 Actions 保留 ZIP SHA-256、主应用/helper 的 arm64、Developer ID 签名、Apple 公证、stapling、Gatekeeper 和 Sparkle 签名验证；不启动发行包代替固定路径的稳定签名调试包。
 
