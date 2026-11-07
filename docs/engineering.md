@@ -1,6 +1,6 @@
 # miniTools 产品约束与工程结构
 
-本文件保存产品行为、架构与权限约束；修改对应功能前先读相关章节。助手操作和最低验证见 [AGENTS.md](../AGENTS.md)，发行协议见 [DISTRIBUTION.md](../DISTRIBUTION.md)。
+本文件保存产品行为、架构与权限约束；修改对应功能前先读相关章节。自动化测试与平台验证统一由 GitHub CI / Actions 执行，开发会话不要求本地 Swift 工具链。助手操作和最低验证见 [AGENTS.md](../AGENTS.md)，发行协议见 [DISTRIBUTION.md](../DISTRIBUTION.md)。
 
 ## 不可随意破坏的产品约束
 

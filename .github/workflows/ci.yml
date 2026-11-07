@@ -25,19 +25,5 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Show toolchain
-        run: |
-          swift --version
-          xcodebuild -version
-
-      - name: Validate repository
-        run: |
-          git diff --check
-          plutil -lint Support/Info.plist
-          bash -n Scripts/*.sh
-
-      - name: Test candidate lifecycle
-        run: python3 -m unittest discover -s Tests/ReleaseWorkflow
-
-      - name: Run tests
-        run: swift test
+      - name: Validate and test source on macOS
+        run: bash Scripts/ci-check.sh

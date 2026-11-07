@@ -90,9 +90,10 @@ DS_Store 管理默认关闭。开启后使用 FSEvents 监听磁盘根目录，�
 
 ## 测试
 
-```bash
-swift test
-```
+自动化测试统一交由 GitHub Actions 执行，开发机无需安装 Swift/Xcode 或先运行本地测试。
+源码 PR 与主分支 CI、发行候选使用同一个 `Scripts/ci-check.sh` 入口，在 macOS runner
+完成 Swift 单元测试、发行回归测试和配置/脚本校验。正式版仍须等待准确候选的必需检查通过。
+自动化不会启动应用或操作真实系统状态，真实交互与权限是否验收需单独说明。
 
 ## 发行与 Homebrew
 
