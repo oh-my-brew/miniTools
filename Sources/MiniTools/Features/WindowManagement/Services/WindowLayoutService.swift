@@ -53,7 +53,7 @@ enum WindowLayoutService {
     private enum Action: Sendable {
         case layout(WindowLayoutCommand)
         case center
-        case nextScreen
+        case nextScreen(preservingLayout: Bool)
 
         var id: WindowControlID {
             switch self {
@@ -222,12 +222,14 @@ enum WindowLayoutService {
                     candidateIndex = targets.firstIndex(of: next) ?? 0
                 case .center:
                     target = WindowGeometry.centeredFrame(current, in: visible)
-                case .nextScreen:
+                case .nextScreen(let preservingLayout):
                     guard geometries.count > 1 else { throw WindowLayoutError.notEnoughScreens }
                     let index = WindowGeometry.screenIndex(containing: current.center, geometries: geometries)
                     destination = geometries[(index + 1) % geometries.count].visibleFrame
-                    // Cross-screen size semantics intentionally remain unchanged.
-                    target = WindowGeometry.frameByMoving(current, from: visible, to: destination)
+                    target = preservingLayout
+                        ? WindowGeometry.frameByScaling(current, from: visible, to: destination)
+                        : WindowGeometry.frameByMoving(current, from: visible, to: destination)
+                    trace.crossScreen(source: visible, mode: preservingLayout ? "proportional" : "absolute")
                 }
                 intent = Intent(window: window, command: action.id, target: target, visible: visible,
                                 processID: application.processIdentifier)
@@ -254,8 +256,12 @@ enum WindowLayoutService {
                         },
                         check: { try gate.check(ticket) }, trace: trace,
                         policy: policy, initial: current,
-                        placement: { if case .nextScreen = action { return nil }
-                                     return WindowFramePlacement(target: target, visible: destination) }(),
+                        placement: {
+                            if case .nextScreen(let preservingLayout) = action {
+                                return preservingLayout ? WindowFramePlacement(relativeTarget: target, visible: destination) : nil
+                            }
+                            return WindowFramePlacement(target: target, visible: destination)
+                        }(),
                         authoritativeRead: windowID != nil, animationsSuppressed: suppressed
                     )
                 }
@@ -315,8 +321,8 @@ enum WindowLayoutService {
     }
 
     @MainActor
-    static func moveFocusedWindowToNextScreen() async throws -> WindowActionOutcome {
-        try await submit(.nextScreen)
+    static func moveFocusedWindowToNextScreen(preservingLayout: Bool = false) async throws -> WindowActionOutcome {
+        try await submit(.nextScreen(preservingLayout: preservingLayout))
     }
 
     @MainActor

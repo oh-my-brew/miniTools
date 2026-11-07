@@ -27,6 +27,8 @@ final class WindowAdjustmentTrace {
         var initial: [Double]?
         var target: [Double]?
         var visible: [Double]?
+        var sourceVisible: [Double]?
+        var crossScreenMode: String?
         var final: [Double]?
         var outcome: String
         var elapsedMS: Double
@@ -53,6 +55,11 @@ final class WindowAdjustmentTrace {
         record.application = application
         record.windowID = windowID
         record.frameSource = frameSource
+    }
+
+    func crossScreen(source: CGRect, mode: String) {
+        record.sourceVisible = Self.components(source)
+        record.crossScreenMode = mode
     }
 
     func plan(initial: CGRect, target: CGRect, visible: CGRect) {

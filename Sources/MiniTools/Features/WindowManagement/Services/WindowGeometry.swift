@@ -288,6 +288,24 @@ enum WindowGeometry {
         )
     }
 
+    /// Normalize against usable logical coordinates, not physical display pixels.
+    static func frameByScaling(_ frame: CGRect, from source: CGRect, to destination: CGRect) -> CGRect {
+        guard source.width > 0, source.height > 0,
+              destination.width > 0, destination.height > 0 else {
+            return frameByMoving(frame, from: source, to: destination)
+        }
+        let width = min(1, max(0, frame.width / source.width))
+        let height = min(1, max(0, frame.height / source.height))
+        let x = min(max(0, (frame.minX - source.minX) / source.width), 1 - width)
+        let y = min(max(0, (frame.minY - source.minY) / source.height), 1 - height)
+        // Round edges together so full-width/right/bottom targets stay anchored.
+        let left = round(destination.minX + x * destination.width)
+        let top = round(destination.minY + y * destination.height)
+        let right = round(destination.minX + (x + width) * destination.width)
+        let bottom = round(destination.minY + (y + height) * destination.height)
+        return CGRect(x: left, y: top, width: max(1, right - left), height: max(1, bottom - top))
+    }
+
     static func centeredFrame(_ frame: CGRect, in visibleFrame: CGRect) -> CGRect {
         CGRect(
             x: round(visibleFrame.midX - frame.width / 2),
