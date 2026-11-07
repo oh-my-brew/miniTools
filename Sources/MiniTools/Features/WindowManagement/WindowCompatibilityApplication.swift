@@ -25,6 +25,6 @@ struct WindowCompatibilityApplication: Equatable {
     static let defaultNames = [
         "com.apple.Safari": "Safari", "com.apple.finder": "Finder",
         "com.openai.codex": "Codex", "com.openai.chat": "ChatGPT",
-        "com.tencent.qq": "QQ", "com.electron.lark": "飞书"
+        "com.tencent.qq": "QQ", "com.electron.lark": "飞书", "com.apple.Notes": "备忘录"
     ]
 }

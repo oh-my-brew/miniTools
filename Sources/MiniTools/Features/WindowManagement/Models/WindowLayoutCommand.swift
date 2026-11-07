@@ -137,8 +137,8 @@ enum WindowControlCatalog {
         ),
         descriptor(.maximize, "铺满当前屏幕", "使用屏幕可用区域", kVK_ANSI_Backslash),
         descriptor(.centerWindow, "窗口居中", "保持窗口当前尺寸", kVK_Return),
-        descriptor(.moveWindowToNextScreen, "窗口移至下一屏", "保留窗口相对位置", kVK_ANSI_P),
-        descriptor(.movePointerToNextScreen, "鼠标移至下一屏", "移动后显示定位动画", kVK_ANSI_Semicolon)
+        descriptor(.moveWindowToNextScreen, "窗口移至下一屏", "保留窗口相对位置", kVK_ANSI_Semicolon),
+        descriptor(.movePointerToNextScreen, "鼠标移至下一屏", "移动后显示定位动画", kVK_ANSI_Quote)
     ]
 
     static let windowLayoutIDs: [WindowControlID] = [

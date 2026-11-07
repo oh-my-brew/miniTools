@@ -1,3 +1,4 @@
+import Carbon
 import Foundation
 
 @MainActor
@@ -13,6 +14,7 @@ final class AppSettings: ObservableObject {
         static let composedWindowControlShortcuts = "composedWindowControlShortcuts"
         static let windowLongPressThresholdMilliseconds = "windowLongPressThresholdMilliseconds"
         static let windowControlShortcuts = "windowControlShortcuts"
+        static let crossScreenPunctuationDefaultsMigrated = "crossScreenPunctuationDefaultsMigrated"
         static let windowCompatibilityApplications = "windowCompatibilityApplications"
         static let crossScreenPreservesLayout = "crossScreenPreservesLayout"
         static let compressionQuality = "compressionQuality"
@@ -377,15 +379,31 @@ final class AppSettings: ObservableObject {
         defaults: UserDefaults
     ) -> [WindowControlID: KeyboardShortcut] {
         var shortcuts = WindowControlCatalog.defaultShortcuts
-        guard
-            let data = defaults.data(forKey: Keys.windowControlShortcuts),
-            let stored = try? JSONDecoder().decode([String: KeyboardShortcut].self, from: data)
-        else {
-            return shortcuts
-        }
-        for (rawID, shortcut) in stored {
+        let stored = defaults.data(forKey: Keys.windowControlShortcuts)
+            .flatMap { try? JSONDecoder().decode([String: KeyboardShortcut].self, from: $0) }
+        for (rawID, shortcut) in stored ?? [:] {
             guard let id = WindowControlID(rawValue: rawID) else { continue }
             shortcuts[id] = shortcut
+        }
+        // Migrate the two historical defaults together. Once migrated, even a
+        // deliberate choice of an old default remains a user customization.
+        let migrationKey = Keys.crossScreenPunctuationDefaultsMigrated
+        if !defaults.bool(forKey: migrationKey) {
+            let modifiers = KeyboardShortcut.panelDefault.carbonModifiers
+            let oldDefaults: [(WindowControlID, UInt32)] = [
+                (.moveWindowToNextScreen, UInt32(kVK_ANSI_P)),
+                (.movePointerToNextScreen, UInt32(kVK_ANSI_Semicolon))
+            ]
+            for (id, keyCode) in oldDefaults {
+                if shortcuts[id] == KeyboardShortcut(keyCode: keyCode, carbonModifiers: modifiers) {
+                    shortcuts[id] = WindowControlCatalog.defaultShortcuts[id]
+                }
+            }
+            let encoded = Dictionary(uniqueKeysWithValues: shortcuts.map { ($0.key.rawValue, $0.value) })
+            if let data = try? JSONEncoder().encode(encoded) {
+                defaults.set(data, forKey: Keys.windowControlShortcuts)
+                defaults.set(true, forKey: migrationKey)
+            }
         }
         return shortcuts
     }
