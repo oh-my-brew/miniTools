@@ -282,29 +282,99 @@ private struct SettingsCategoryDetail: View {
 
     @ViewBuilder
     private var windowManagementSettings: some View {
+        Section {
+            Picker(
+                "窗口布局方案",
+                selection: Binding(
+                    get: { settings.windowManagementMode.rawValue },
+                    set: { rawValue in
+                        guard let mode = WindowManagementMode(rawValue: rawValue) else { return }
+                        shortcutCoordinator.updateWindowManagementMode(mode)
+                    }
+                )
+            ) {
+                Text(WindowManagementMode.classic.title)
+                    .tag(WindowManagementMode.classic.rawValue)
+                Text(WindowManagementMode.sizeAndPosition.title)
+                    .tag(WindowManagementMode.sizeAndPosition.rawValue)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 320)
+        } header: {
+            Text("布局方案")
+        } footer: {
+            Text("经典布局按区域直接调整；尺寸与位置方案先选择窗口大小，再用 H、L 或 Return 定位。")
+        }
+
+        if settings.windowManagementMode == .classic {
+            Section("四角") {
+                ForEach(
+                    windowDescriptors([.upperLeft, .upperRight, .lowerLeft, .lowerRight])
+                ) { descriptor in
+                    windowControlRow(descriptor)
+                }
+            }
+
+            Section("边缘与尺寸") {
+                ForEach(
+                    windowDescriptors([.left, .right, .horizontalHalves, .verticalThirds])
+                ) { descriptor in
+                    windowControlRow(descriptor)
+                }
+            }
+
+            Section("其他") {
+                ForEach(windowDescriptors([.maximize, .centerWindow])) { descriptor in
+                    windowControlRow(descriptor)
+                }
+            }
+        } else {
+            Section("长按") {
+                LabeledContent {
+                    HStack(spacing: 10) {
+                        Slider(
+                            value: Binding(
+                                get: {
+                                    Double(settings.windowLongPressThresholdMilliseconds)
+                                },
+                                set: { value in
+                                    shortcutCoordinator
+                                        .updateWindowLongPressThresholdMilliseconds(Int(value))
+                                }
+                            ),
+                            in: Double(HotKeyLongPressRecognizer.minimumThresholdMilliseconds)...Double(HotKeyLongPressRecognizer.maximumThresholdMilliseconds),
+                            step: Double(HotKeyLongPressRecognizer.thresholdStepMilliseconds)
+                        )
+                        .frame(width: 170)
+                        Text("\(settings.windowLongPressThresholdMilliseconds)ms")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 52, alignment: .trailing)
+                    }
+                } label: {
+                    settingsLabel(
+                        title: "长按触发时间",
+                        subtitle: "用于 U、J、K 的长按尺寸动作"
+                    )
+                }
+            }
+
+            Section("窗口尺寸") {
+                ForEach(composedWindowDescriptors(ComposedWindowControlCatalog.sizeIDs)) {
+                    descriptor in
+                    composedWindowControlRow(descriptor)
+                }
+            }
+
+            Section("窗口位置") {
+                ForEach(composedWindowDescriptors(ComposedWindowControlCatalog.placementIDs)) {
+                    descriptor in
+                    composedWindowControlRow(descriptor)
+                }
+            }
+        }
+
         WindowCompatibilitySettingsView(settings: settings)
-
-        Section("四角") {
-            ForEach(
-                windowDescriptors([.upperLeft, .upperRight, .lowerLeft, .lowerRight])
-            ) { descriptor in
-                windowControlRow(descriptor)
-            }
-        }
-
-        Section("边缘与尺寸") {
-            ForEach(
-                windowDescriptors([.left, .right, .horizontalHalves, .verticalThirds])
-            ) { descriptor in
-                windowControlRow(descriptor)
-            }
-        }
-
-        Section("其他") {
-            ForEach(windowDescriptors([.maximize, .centerWindow])) { descriptor in
-                windowControlRow(descriptor)
-            }
-        }
 
         Section {
             Toggle("跨屏时保持窗口布局比例", isOn: Binding(
@@ -321,7 +391,11 @@ private struct SettingsCategoryDetail: View {
             Text("跨屏操作")
         } footer: {
             HStack {
-                Text("快捷键修改后立即生效。窗口操作需要辅助功能权限。")
+                Text(
+                    settings.windowManagementMode == .sizeAndPosition
+                        ? "长按时间和快捷键修改后立即生效；窗口操作需要辅助功能权限。"
+                        : "快捷键修改后立即生效。窗口操作需要辅助功能权限。"
+                )
                 Spacer()
                 Button("恢复默认快捷键") {
                     shortcutCoordinator.restoreDefaultWindowControlShortcuts()
@@ -590,6 +664,35 @@ private struct SettingsCategoryDetail: View {
                 title: descriptor.title,
                 subtitle: descriptor.subtitle,
                 error: shortcutCoordinator.windowControlErrors[descriptor.id]
+            )
+        }
+    }
+
+    private func composedWindowDescriptors(
+        _ ids: [ComposedWindowControlID]
+    ) -> [ComposedWindowControlDescriptor] {
+        ids.compactMap { ComposedWindowControlCatalog.descriptor(for: $0) }
+    }
+
+    private func composedWindowControlRow(
+        _ descriptor: ComposedWindowControlDescriptor
+    ) -> some View {
+        LabeledContent {
+            ShortcutRecorderView(
+                shortcut: settings.composedWindowControlShortcut(for: descriptor.id),
+                onChange: { shortcut in
+                    shortcutCoordinator.updateComposedWindowControlShortcut(
+                        shortcut,
+                        for: descriptor.id
+                    )
+                }
+            )
+            .frame(width: 190, height: 28)
+        } label: {
+            settingsLabel(
+                title: descriptor.title,
+                subtitle: descriptor.subtitle,
+                error: shortcutCoordinator.composedWindowControlErrors[descriptor.id]
             )
         }
     }

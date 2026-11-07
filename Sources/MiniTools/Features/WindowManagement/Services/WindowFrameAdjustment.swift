@@ -17,6 +17,7 @@ enum WindowFrameAdjustment {
         trace: WindowAdjustmentTrace,
         policy: WindowAdjustmentPolicy = .baseline,
         initial: CGRect? = nil,
+        allowsResize: Bool = true,
         placement: WindowFramePlacement? = nil,
         authoritativeRead: Bool = true,
         animationsSuppressed: Bool = false,
@@ -26,7 +27,7 @@ enum WindowFrameAdjustment {
         guard policy == .compatible, let initial else {
             trace.event("baselinePositionSizePosition")
             try check(); try position(target.origin)
-            try check(); try size(target.size)
+            if allowsResize { try check(); try size(target.size) }
             try check(); try position(target.origin)
             try check()
             let actual = try read()
@@ -68,7 +69,7 @@ enum WindowFrameAdjustment {
         }
 
         func resizeIfNeeded() throws {
-            guard uptime() < deadline,
+            guard allowsResize, uptime() < deadline,
                   WindowGeometry.correctedSizeAfterApplyingFrame(actualFrame: actual, targetFrame: target) != nil
             else { return }
             trace.event("compatibleSize")
