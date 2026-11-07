@@ -373,7 +373,7 @@ private struct SettingsCategoryDetail: View {
                 } label: {
                     settingsLabel(
                         title: "长按触发时间",
-                        subtitle: "用于 U、I、J、K 的长按尺寸动作"
+                        subtitle: "用于 U、J、K 的长按尺寸动作"
                     )
                 }
             }

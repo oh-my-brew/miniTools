@@ -54,12 +54,14 @@ final class WindowDefaultsUpdateTests: XCTestCase {
         XCTAssertEqual(AppSettings(defaults: defaults).windowCompatibilityApplications, previous)
     }
 
-    func testILongPressSelectsFullWidthHalfHeightAndPositionsTopBottom() throws {
-        XCTAssertEqual(ComposedWindowControlCatalog.descriptor(for: .twoThirdsWidth)?.supportsLongPress, true)
+    func testUShortAndLongPressTargetsKeepIUnchangedAndPositionTopBottom() throws {
+        XCTAssertEqual(ComposedWindowControlCatalog.descriptor(for: .twoThirdsWidth)?.supportsLongPress, false)
+        XCTAssertEqual(ComposedWindowControlCatalog.descriptor(for: .fullOrHalfHeight)?.supportsLongPress, true)
         let short = try XCTUnwrap(ComposedWindowControlCatalog.sizeTarget(for: .twoThirdsWidth, press: .short))
-        let long = try XCTUnwrap(ComposedWindowControlCatalog.sizeTarget(for: .twoThirdsWidth, press: .long))
+        let long = try XCTUnwrap(ComposedWindowControlCatalog.sizeTarget(for: .fullOrHalfHeight, press: .long))
         XCTAssertEqual(short.frame, UnitWindowFrame(1.0 / 6, 0, 2.0 / 3, 1))
         XCTAssertEqual(long.frame, UnitWindowFrame(0, 0, 1, 0.5))
+        XCTAssertEqual(ComposedWindowControlCatalog.sizeTarget(for: .fullOrHalfHeight, press: .short)?.frame, UnitWindowFrame(0, 0, 1, 1))
         let screen = CGRect(x: -1440, y: 40, width: 1440, height: 900)
         let frame = WindowGeometry.targetFrame(for: long.frame, in: screen)
         let top = try XCTUnwrap(WindowGeometry.composedPlacementTarget(currentFrame: frame, visibleFrame: screen, placement: .leading))
