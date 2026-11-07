@@ -56,9 +56,6 @@ final class AppController: NSObject {
             },
             performWindowControl: { [weak self] id in
                 self?.commandDispatcher.perform(.windowControl(id))
-            },
-            performComposedWindowControl: { [weak self] id, press in
-                self?.windowControlController.performComposed(id, press: press)
             }
         )
         mouseBindingCoordinator = MouseBindingCoordinator(

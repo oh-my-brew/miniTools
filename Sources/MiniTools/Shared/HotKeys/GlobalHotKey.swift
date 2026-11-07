@@ -19,24 +19,18 @@ private let miniToolsHotKeyHandler: EventHandlerUPP = { _, event, userData in
     guard result == noErr else { return result }
     guard receivedID.id == manager.identifier else { return OSStatus(eventNotHandledErr) }
 
-    let eventKind = GetEventKind(event)
     let receivedAt = ContinuousClock.now
     DispatchQueue.main.async {
-        if manager.identifier == 1, eventKind != UInt32(kEventHotKeyReleased) {
+        if manager.identifier == 1 {
             ResponsivenessMetrics.event("PanelHotkeyMainQueue", since: receivedAt)
         }
-        if eventKind == UInt32(kEventHotKeyReleased) {
-            manager.onReleased?()
-        } else {
-            manager.onPressed()
-        }
+        manager.onPressed()
     }
     return noErr
 }
 
 final class GlobalHotKey: @unchecked Sendable {
     var onPressed: () -> Void
-    var onReleased: (() -> Void)?
     fileprivate let identifier: UInt32
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandlerRef: EventHandlerRef?
@@ -45,21 +39,15 @@ final class GlobalHotKey: @unchecked Sendable {
 
     init(
         identifier: UInt32,
-        onPressed: @escaping () -> Void,
-        onReleased: (() -> Void)? = nil
+        onPressed: @escaping () -> Void
     ) {
         self.identifier = identifier
         self.onPressed = onPressed
-        self.onReleased = onReleased
 
         var eventTypes = [
             EventTypeSpec(
                 eventClass: OSType(kEventClassKeyboard),
                 eventKind: UInt32(kEventHotKeyPressed)
-            ),
-            EventTypeSpec(
-                eventClass: OSType(kEventClassKeyboard),
-                eventKind: UInt32(kEventHotKeyReleased)
             )
         ]
         handlerInstallationStatus = InstallEventHandler(

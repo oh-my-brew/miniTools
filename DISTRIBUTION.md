@@ -88,3 +88,17 @@ Safari 最小化恢复的自动测试注入 AX 状态、返回码、时钟与等
 Swift 常规 CI 保留单元测试所需编译；发行配置的 arm64 构建由快速出包 job 负责，避免
 在 CI 和发行路径重复构建同一 Release。主应用/Helper 的真实权限与交互仍由用户体验，
 自动发布不宣称这些运行时行为已人工验收。
+
+## 验证职责（2026-11-07）
+
+常规开发与发行不再要求本地 `swift test`、构建或 macOS 平台校验。源码 PR CI 和准确发行候选
+均在 GitHub Actions macOS runner 调用 `Scripts/ci-check.sh`，统一运行 Swift 单元测试、发行
+回归测试、Info.plist 和 Shell 校验；测试失败保持候选证据并修复，不取消质量或分支保护门禁。
+源码 PR 合入后可使用受信任 `master` workflow 按合入后的准确 branch head SHA 派发发行，
+以实际 Actions run、候选身份和最终制品校验验证流程。签名、公证、架构、Gatekeeper 与更新
+签名检查继续由发行 Actions 执行。本机仅审阅源码、检查 diff、发起和查询 Actions，不安装或启动应用。
+
+## 本次变更
+
+- 窗口管理移除“尺寸与位置”方案及其长按配置，仅保留经典布局；已有经典布局快捷键、跨屏操作和鼠标绑定保留。
+- 自动化验证统一交由 GitHub CI / Actions，本次通过新版本发行验证该流程。前一提交在 Linux 上未执行的 Swift 测试由本次远端源码和候选检查覆盖；最终结果以对应 Actions run 为准，真实窗口交互仍未验证。

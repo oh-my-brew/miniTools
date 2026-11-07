@@ -47,6 +47,7 @@ jobs:
     needs: prepare
     name: Build and test
     runs-on: macos-26
+    timeout-minutes: 20
     permissions:
       contents: read
       statuses: write
@@ -57,12 +58,7 @@ jobs:
           persist-credentials: false
       - name: Candidate tests in parallel with packaging
         id: tests
-        run: |
-          git diff --check
-          plutil -lint Support/Info.plist
-          bash -n Scripts/*.sh
-          python3 -m unittest discover -s Tests/ReleaseWorkflow
-          swift test
+        run: bash Scripts/ci-check.sh
       - name: Report exact candidate result for branch protection
         if: always()
         env:

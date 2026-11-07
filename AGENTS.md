@@ -40,26 +40,18 @@ CODE_SIGN_IDENTITY="Apple Development: Name (TEAMID)" ./Scripts/build-app.sh
 
 项目仅支持 Apple Silicon，主应用和合盖运行 helper 只生成 arm64 二进制，不再构建 x86_64。先签署 helper，再签署外层应用。正式 helper 仅由 `/Applications/miniTools.app` 管理；`dist/miniTools.app` 不得注册或查询正式后台服务。
 
-## 最低验证要求
+## 自动化验证（GitHub Actions）
 
-任何源码修改至少运行不会启动应用或修改真实系统状态的自动化检查：
+常规开发和发行会话不在本地执行 `swift test`、`swift build` 或 macOS 平台校验；不要求开发机安装 Swift/Xcode，也不借助其他设备绕行测试。自动化检查统一在 GitHub CI / Actions 的 macOS runner 上执行，不能因为本机缺少工具链跳过远端质量门禁。
 
-```bash
-swift test
-git diff --check
-```
+- `.github/workflows/ci.yml` 在源码 PR、主分支推送及手动派发时运行 `Scripts/ci-check.sh`。
+- `.github/workflows/beta.yml` 对准确候选 SHA 运行同一检查入口，与签名打包并行；测试或安全检查失败不得提升正式版。
+- `Scripts/ci-check.sh` 统一执行工具链报告、`git diff --check`、Info.plist 校验、Shell 语法检查、发行回归测试和 `swift test`。架构或依赖变化时，在 Actions 补充 arm64 release 构建验证。
+- UI、快捷键、AX、鼠标监听变更需补充可隔离单元测试；测试不得启动应用、操作真实剪贴板、Safari、系统设置或发送真实输入。
+- 本地仅做源码审阅、Git 状态和 `git diff --check` 等无需 macOS 的轻量检查；提交不以本地 Swift 测试为前置条件。交付须记录实际源码/候选 SHA、Actions run 和结果，不能用其他提交的成功结果代替。
+- 发行 Actions 保留 ZIP SHA-256、主应用/helper 的 arm64、Developer ID 签名、Apple 公证、stapling、Gatekeeper 和 Sparkle 签名验证；不启动发行包代替固定路径的稳定签名调试包。
 
-再按改动范围补充验证：
-
-| 改动 | 额外验证 |
-| --- | --- |
-| UI、快捷键、AX、鼠标监听 | 补充可隔离的单元测试；不运行 `./Scripts/run-debug.sh` 或手动功能测试，交付时明确记录运行时未验证。 |
-| Info.plist | `plutil -lint Support/Info.plist`。 |
-| Shell 脚本 | `bash -n Scripts/*.sh`。 |
-| 架构或依赖 | `swift build -c release --triple arm64-apple-macosx26.0 --scratch-path .build/ci-arm64`。 |
-| 发行打包 | 校验 ZIP 的 SHA-256、`lipo -archs` 为 arm64，并检查 `codesign`、`stapler validate` 与 `spctl --assess`。不要启动发行包代替固定路径的稳定签名调试包。 |
-
-开发与发行会话默认不做本机功能测试。交付时必须明确写出运行时未验证项，不能把编译或单元测试通过描述成“功能已验证”。
+开发与发行会话默认不做本机功能测试。交付时明确区分远端自动化结果与运行时未验证项，不能把编译或单元测试通过描述成“功能已验证”。本地功能调试仅按用户明确要求执行，仍须遵守上文稳定路径和签名约束。
 
 ## 发行边界
 
@@ -74,6 +66,10 @@ git diff --check
 - 原创代码使用 MIT License。
 - Smartisan 风格锤子图标和写轮眼动画资源不自动包含在 MIT 授权中，来源与状态见 `THIRD_PARTY_NOTICES.md`。
 - 在确认再分发权利或替换为原创资源前，不要把当前图稿描述为适合无条件公开发行。
+
+## 窗口管理
+
+- 仅保留经典布局；“尺寸与位置”方案、专属快捷键和长按设置已移除。旧配置不再参与注册或动作分派，不迁移覆盖经典布局快捷键、鼠标绑定或历史统计。
 
 ## 修改时的工作约定
 
