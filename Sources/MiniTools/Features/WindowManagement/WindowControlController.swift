@@ -65,7 +65,7 @@ final class WindowControlController {
         Task { [weak self] in
             do {
                 let outcome = try await action()
-                guard let self else { return }
+                guard let self, outcome.didReachTarget else { return }
                 let title = WindowControlCatalog.targetTitle(
                     for: id,
                     candidateIndex: outcome.candidateIndex

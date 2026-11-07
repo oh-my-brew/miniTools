@@ -5,6 +5,7 @@ import Foundation
 /// 一次窗口操作命中的循环候选。
 struct WindowActionOutcome: Equatable, Sendable {
     let candidateIndex: Int
+    let didReachTarget: Bool
 }
 
 enum WindowLayoutError: LocalizedError {
@@ -14,7 +15,6 @@ enum WindowLayoutError: LocalizedError {
     case fullScreenWindow
     case unreadableWindowFrame
     case cannotResizeWindow(AXError)
-    case frameDidNotConverge
     case notEnoughScreens
     case cannotReadPointerPosition
     case cannotMovePointer(CGError)
@@ -33,8 +33,6 @@ enum WindowLayoutError: LocalizedError {
             return "无法读取当前窗口的位置或尺寸"
         case let .cannotResizeWindow(error):
             return "当前窗口不允许调整（错误码 \(error.rawValue)）"
-        case .frameDidNotConverge:
-            return "窗口未能调整到目标布局，请查看窗口诊断记录"
         case .notEnoughScreens:
             return "当前只检测到一块显示器"
         case .cannotReadPointerPosition:
@@ -201,7 +199,7 @@ enum WindowLayoutService {
                 trace.event("resolved", frame: current)
                 try gate.check(ticket)
                 let result = try WindowFrameAdjustment.run(
-                    initial: current, target: target, visible: destination,
+                    target: target,
                     read: read,
                     position: { point in
                         try gate.check(ticket)
@@ -222,14 +220,11 @@ enum WindowLayoutService {
                 try gate.check(ticket)
                 lastFrame = result.frame
                 trace.finish(result.outcome.rawValue, frame: result.frame)
-                guard result.outcome == .applied else { throw WindowLayoutError.frameDidNotConverge }
-                return WindowActionOutcome(candidateIndex: candidateIndex)
+                return WindowActionOutcome(candidateIndex: candidateIndex,
+                                           didReachTarget: result.outcome == .applied)
             } catch is CancellationError {
                 trace.finish("superseded", frame: lastFrame)
                 throw CancellationError()
-            } catch WindowLayoutError.frameDidNotConverge {
-                // The engine already recorded the actual non-success result.
-                throw WindowLayoutError.frameDidNotConverge
             } catch {
                 switch error {
                 case WindowLayoutError.cannotResizeWindow(let status):
@@ -424,9 +419,8 @@ enum WindowLayoutService {
 
     private static func set(_ value: CFTypeRef, attribute: CFString, on window: AXUIElement) throws -> AXError {
         let result = AccessibilityClient.setValue(value, on: window, attribute: attribute)
-        // A reply timeout is ambiguous, not proof of failure or success. The
-        // same-window observation loop must verify its visible result.
-        guard result == .success || result == .cannotComplete else {
+        // Keep real AX failures visible; a frame mismatch alone is diagnostic.
+        guard result == .success else {
             throw WindowLayoutError.cannotResizeWindow(result)
         }
         return result
