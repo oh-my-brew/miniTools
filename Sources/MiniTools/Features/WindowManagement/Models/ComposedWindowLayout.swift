@@ -72,8 +72,9 @@ enum ComposedWindowControlCatalog {
         descriptor(
             .twoThirdsWidth,
             "三分之二宽",
-            "满高并居中",
-            kVK_ANSI_I
+            "短按：满高居中 · 长按：全宽半高",
+            kVK_ANSI_I,
+            supportsLongPress: true
         ),
         descriptor(
             .halfOrThirdFullHeight,
@@ -147,7 +148,13 @@ enum ComposedWindowControlCatalog {
                 statisticsID: "size.fullWidthHalfHeight",
                 title: "全宽半高 · 上半屏"
             )
-        case (.twoThirdsWidth, _):
+        case (.twoThirdsWidth, .long):
+            ComposedWindowSizeTarget(
+                frame: UnitWindowFrame(0, 0, 1, 0.5),
+                statisticsID: "size.fullWidthHalfHeight",
+                title: "全宽半高 · 上半屏"
+            )
+        case (.twoThirdsWidth, .short):
             ComposedWindowSizeTarget(
                 frame: UnitWindowFrame(1.0 / 6.0, 0, 2.0 / 3.0, 1),
                 statisticsID: "size.twoThirdsFullHeight",

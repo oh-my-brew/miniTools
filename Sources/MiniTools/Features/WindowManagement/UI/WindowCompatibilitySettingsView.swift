@@ -59,7 +59,7 @@ struct WindowCompatibilitySettingsView: View {
                 message = nil
             }
         } message: {
-            Text("将恢复 Safari、Finder、Codex、ChatGPT、QQ、飞书六项，并移除自行添加的应用。")
+            Text("将恢复 Safari、Finder、Codex、ChatGPT、QQ、飞书、备忘录七项，并移除自行添加的应用。")
         }
     }
 
