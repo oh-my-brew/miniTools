@@ -7,7 +7,7 @@ enum WindowAdjustmentPolicy: String {
 
     static let defaultBundleIdentifiers: Set<String> = [
         "com.apple.Safari", "com.apple.finder", "com.openai.codex",
-        "com.openai.chat", "com.tencent.qq", "com.electron.lark"
+        "com.openai.chat", "com.tencent.qq", "com.electron.lark", "com.apple.Notes"
     ]
 
     static func resolve(bundleIdentifier: String?,

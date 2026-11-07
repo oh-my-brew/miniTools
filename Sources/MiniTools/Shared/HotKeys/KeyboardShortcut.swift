@@ -69,7 +69,7 @@ struct KeyboardShortcut: Codable, Equatable, Sendable {
         UInt32(kVK_ANSI_6): "6", UInt32(kVK_ANSI_7): "7",
         UInt32(kVK_ANSI_8): "8", UInt32(kVK_ANSI_9): "9",
         UInt32(kVK_Space): "Space", UInt32(kVK_Return): "↩",
-        UInt32(kVK_ANSI_Semicolon): ";", UInt32(kVK_ANSI_Backslash): "\\",
+        UInt32(kVK_ANSI_Quote): "'", UInt32(kVK_ANSI_Semicolon): ";", UInt32(kVK_ANSI_Backslash): "\\",
         UInt32(kVK_Tab): "⇥", UInt32(kVK_Escape): "⎋",
         UInt32(kVK_F1): "F1", UInt32(kVK_F2): "F2",
         UInt32(kVK_F3): "F3", UInt32(kVK_F4): "F4",
