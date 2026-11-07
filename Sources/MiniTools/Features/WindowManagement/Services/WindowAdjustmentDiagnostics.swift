@@ -1,17 +1,20 @@
 import Foundation
 import OSLog
 
-/// One bounded record per explicit window action; never contains titles or content.
+/// Correlated action and read-only observation records; no titles or content.
 final class WindowAdjustmentTrace {
-    struct Event: Codable {
+    struct Event: Codable, Sendable {
         let phase: String
         let elapsedMS: Double
         let frame: [Double]?
         let axStatus: Int32?
     }
 
-    struct Record: Codable {
+    struct Record: Codable, Sendable {
         let schema: Int
+        var stage: String = "action"
+        var observedAccessibility: [Double]?
+        var observedWindowServer: [Double]?
         let id: UUID
         let timestamp: Date
         let version: String
@@ -72,6 +75,20 @@ final class WindowAdjustmentTrace {
         record.final = frame.map(Self.components)
         record.elapsedMS = (ProcessInfo.processInfo.systemUptime - started) * 1000
         WindowAdjustmentLog.shared.append(record)
+    }
+
+    func snapshot() -> Record { record }
+
+    static func appendObservation(from record: Record, phase: String, elapsedMS: Double,
+                                  accessibility: CGRect?, windowServer: CGRect?) {
+        var sample = record
+        sample.stage = phase
+        sample.elapsedMS = elapsedMS
+        sample.observedAccessibility = accessibility.map(components)
+        sample.observedWindowServer = windowServer.map(components)
+        sample.final = (windowServer ?? accessibility).map(components)
+        sample.events = []
+        WindowAdjustmentLog.shared.append(sample)
     }
 
     private static func components(_ rect: CGRect) -> [Double] {
