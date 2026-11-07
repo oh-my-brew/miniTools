@@ -22,7 +22,7 @@ gh workflow run beta.yml --ref master --field source_ref=<40位准确源码SHA>
 ## 签名、公证与发布资产
 
 `fast_beta` lane 复用只读 Fastlane Match 和固定版本 apple-ci，先构建 arm64 主应用及 helper、
-使用 Developer ID 签名，再执行 Apple 公证、staple、Gatekeeper 检查；质量测试单独并行。窗口调整修复复用既有检查入口，以内存伪读写作回归；不安装目标应用或增加 GUI 验证任务，发行自动化通过不代表真实窗口交互已验收。
+使用 Developer ID 签名，再执行 Apple 公证、staple、Gatekeeper 检查；质量测试单独并行。窗口调整修复复用既有检查入口，以内存伪读写作回归；不安装目标应用或增加 GUI 验证任务，发行自动化通过不代表真实窗口交互已验收。统一窗口调整基线的发布用于用户整体体验；应用最小尺寸、贴边和异步变化仍需运行时反馈，诊断快照不作为交互验收。
 Swift/Ruby 依赖与兼容构建输出可缓存，Apple 凭据和签名身份不进入缓存或普通 Artifact。
 
 每个不可变 Beta 包含 ZIP、SHA-256、release-manifest.json、签名 appcast-beta.xml 与稳定
