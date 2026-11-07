@@ -253,7 +253,17 @@ enum WindowLayoutService {
                     target = next
                     candidateIndex = targets.firstIndex(of: next) ?? 0
                 case .composedSize(let size):
-                    target = WindowGeometry.targetFrame(for: size.frame, in: visible)
+                    guard let planned = WindowGeometry.composedSizeTargetFrame(
+                        currentFrame: current, size: size, visibleFrame: visible
+                    ) else {
+                        // Exit before AX writes or the compatible animation scope.
+                        try gate.check(ticket)
+                        trace.plan(initial: current, target: current, visible: visible)
+                        trace.event("sizeAlreadyMatches")
+                        trace.finish("unchangedSize", frame: current)
+                        return WindowActionOutcome(candidateIndex: 0, didReachTarget: false)
+                    }
+                    target = planned
                     statisticsID = size.statisticsID
                     title = size.title
                 case .composedPlacement(let placement):

@@ -12,6 +12,7 @@ final class AppSettings: ObservableObject {
         // Fresh opt-in: do not revive the removed scheme's old selected mode.
         static let windowManagementMode = "windowManagementModeV2"
         static let composedWindowControlShortcuts = "composedWindowControlShortcuts"
+        static let composedScreenshotDefaultsMigrated = "composedScreenshotDefaultsMigrated"
         static let windowLongPressThresholdMilliseconds = "windowLongPressThresholdMilliseconds"
         static let windowControlShortcuts = "windowControlShortcuts"
         static let crossScreenPunctuationDefaultsMigrated = "crossScreenPunctuationDefaultsMigrated"
@@ -301,15 +302,33 @@ final class AppSettings: ObservableObject {
         defaults: UserDefaults
     ) -> [ComposedWindowControlID: KeyboardShortcut] {
         var shortcuts = ComposedWindowControlCatalog.defaultShortcuts
-        guard
-            let data = defaults.data(forKey: Keys.composedWindowControlShortcuts),
-            let stored = try? JSONDecoder().decode([String: KeyboardShortcut].self, from: data)
-        else {
-            return shortcuts
-        }
-        for (rawID, shortcut) in stored {
+        let stored = defaults.data(forKey: Keys.composedWindowControlShortcuts)
+            .flatMap { try? JSONDecoder().decode([String: KeyboardShortcut].self, from: $0) }
+        for (rawID, shortcut) in stored ?? [:] {
             guard let id = ComposedWindowControlID(rawValue: rawID) else { continue }
             shortcuts[id] = shortcut
+        }
+        if !defaults.bool(forKey: Keys.composedScreenshotDefaultsMigrated) {
+            let oldKeys: [ComposedWindowControlID: Int] = [
+                .fullOrHalfHeight: kVK_ANSI_U, .twoThirdsWidth: kVK_ANSI_I,
+                .halfOrThirdFullHeight: kVK_ANSI_J, .halfOrThirdHalfHeight: kVK_ANSI_K,
+                .upperLeftPlacement: kVK_ANSI_Y, .lowerLeftPlacement: kVK_ANSI_H,
+                .upperRightPlacement: kVK_ANSI_O, .lowerRightPlacement: kVK_ANSI_L
+            ]
+            // Compare all saved values against the previous layout, not against
+            // keys already changed in this migration. Custom bindings survive.
+            for (id, code) in oldKeys {
+                let oldDefault = KeyboardShortcut(keyCode: UInt32(code),
+                    carbonModifiers: KeyboardShortcut.panelDefault.carbonModifiers)
+                if stored?[id.rawValue] == oldDefault {
+                    shortcuts[id] = ComposedWindowControlCatalog.defaultShortcuts[id]
+                }
+            }
+            let raw = Dictionary(uniqueKeysWithValues: shortcuts.map { ($0.key.rawValue, $0.value) })
+            if let data = try? JSONEncoder().encode(raw) {
+                defaults.set(data, forKey: Keys.composedWindowControlShortcuts)
+                defaults.set(true, forKey: Keys.composedScreenshotDefaultsMigrated)
+            }
         }
         return shortcuts
     }
