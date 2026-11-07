@@ -64,11 +64,12 @@ final class WindowDefaultsUpdateTests: XCTestCase {
         XCTAssertEqual(ComposedWindowControlCatalog.sizeTarget(for: .fullOrHalfHeight, press: .short)?.frame, UnitWindowFrame(0, 0, 1, 1))
         let screen = CGRect(x: -1440, y: 40, width: 1440, height: 900)
         let frame = WindowGeometry.targetFrame(for: long.frame, in: screen)
-        let top = try XCTUnwrap(WindowGeometry.composedPlacementTarget(currentFrame: frame, visibleFrame: screen, placement: .leading))
-        let bottom = try XCTUnwrap(WindowGeometry.composedPlacementTarget(currentFrame: frame, visibleFrame: screen, placement: .trailing))
+        let top = WindowGeometry.composedPlacementTarget(currentFrame: frame, visibleFrame: screen, placement: .upperLeft)
+        let bottom = WindowGeometry.composedPlacementTarget(currentFrame: frame, visibleFrame: screen, placement: .lowerLeft)
         XCTAssertEqual(top.frame, frame)
         XCTAssertEqual(bottom.frame, CGRect(x: -1440, y: 490, width: 1440, height: 450))
-        XCTAssertNil(WindowGeometry.composedPlacementTarget(currentFrame: frame, visibleFrame: screen, placement: .center))
+        XCTAssertEqual(WindowGeometry.composedPlacementTarget(currentFrame: frame, visibleFrame: screen, placement: .center).frame,
+                       CGRect(x: -1440, y: 265, width: 1440, height: 450))
     }
 
     private func shortcut(_ code: Int) -> KeyboardShortcut {

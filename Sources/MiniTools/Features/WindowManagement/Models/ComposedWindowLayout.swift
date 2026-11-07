@@ -20,8 +20,11 @@ enum ComposedWindowControlID: String, CaseIterable, Codable, Hashable, Identifia
     case twoThirdsWidth
     case halfOrThirdFullHeight
     case halfOrThirdHalfHeight
-    case leadingPlacement
-    case trailingPlacement
+    case upperLeftPlacement
+    // Keep the stored identifiers for the existing H/L shortcut preferences.
+    case lowerLeftPlacement = "leadingPlacement"
+    case upperRightPlacement
+    case lowerRightPlacement = "trailingPlacement"
     case centerPlacement
 
     var id: Self { self }
@@ -33,8 +36,10 @@ enum WindowShortcutPress: Sendable {
 }
 
 enum ComposedWindowPlacement: Sendable {
-    case leading
-    case trailing
+    case upperLeft
+    case lowerLeft
+    case upperRight
+    case lowerRight
     case center
 }
 
@@ -89,22 +94,14 @@ enum ComposedWindowControlCatalog {
             kVK_ANSI_K,
             supportsLongPress: true
         ),
-        descriptor(
-            .leadingPlacement,
-            "向前侧定位",
-            "左侧；半高布局在左上与左下之间切换",
-            kVK_ANSI_H
-        ),
-        descriptor(
-            .trailingPlacement,
-            "向后侧定位",
-            "右侧；半高布局在右上与右下之间切换",
-            kVK_ANSI_L
-        ),
+        descriptor(.upperLeftPlacement, "左上对齐", "保持尺寸，窗口左上角对齐屏幕左上角", kVK_ANSI_Y),
+        descriptor(.lowerLeftPlacement, "左下对齐", "保持尺寸，窗口左下角对齐屏幕左下角", kVK_ANSI_H),
+        descriptor(.upperRightPlacement, "右上对齐", "保持尺寸，窗口右上角对齐屏幕右上角", kVK_ANSI_O),
+        descriptor(.lowerRightPlacement, "右下对齐", "保持尺寸，窗口右下角对齐屏幕右下角", kVK_ANSI_L),
         descriptor(
             .centerPlacement,
             "窗口居中",
-            "保持当前尺寸；全宽布局不移动",
+            "保持当前尺寸，在屏幕可用区域居中",
             kVK_Return
         )
     ]
@@ -117,8 +114,10 @@ enum ComposedWindowControlCatalog {
     ]
 
     static let placementIDs: [ComposedWindowControlID] = [
-        .leadingPlacement,
-        .trailingPlacement,
+        .upperLeftPlacement,
+        .lowerLeftPlacement,
+        .upperRightPlacement,
+        .lowerRightPlacement,
         .centerPlacement
     ]
 
@@ -184,8 +183,10 @@ enum ComposedWindowControlCatalog {
 
     static func placement(for id: ComposedWindowControlID) -> ComposedWindowPlacement? {
         switch id {
-        case .leadingPlacement: .leading
-        case .trailingPlacement: .trailing
+        case .upperLeftPlacement: .upperLeft
+        case .lowerLeftPlacement: .lowerLeft
+        case .upperRightPlacement: .upperRight
+        case .lowerRightPlacement: .lowerRight
         case .centerPlacement: .center
         default: nil
         }
