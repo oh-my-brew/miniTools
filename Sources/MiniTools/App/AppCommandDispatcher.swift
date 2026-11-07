@@ -26,7 +26,8 @@ final class AppCommandDispatcher {
             windowControlController.perform(
                 control,
                 cursorHighlightStyles: settings.cursorHighlightStyles,
-                crossScreenPreservesLayout: settings.crossScreenPreservesLayout
+                crossScreenPreservesLayout: settings.crossScreenPreservesLayout,
+                compatibleApplications: settings.windowCompatibilityApplications
             )
         }
     }
