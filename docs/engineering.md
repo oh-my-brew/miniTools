@@ -60,7 +60,7 @@
   到足够大的高层面板。
 - 窗口操作的 AX 查询、写入和观察统一在专用串行队列；新请求使旧请求停止后续写入（不能中断正在进行的同步 AX 调用）。同一窗口/命令的未完成循环按目标推进，完成或失败后重新以实际矩形判断。
 - 每轮按初始矩形匹配唯一 WindowServer ID，此后只查询同一窗口；无法唯一匹配时只读同一 AX 对象，不反复选择进程中的第一个窗口。
-- 默认连续“位置 → 尺寸 → 位置”基线不等待。`WindowAdjustmentPolicy` 精确列举兼容 bundle ID：`com.apple.Safari`、`com.apple.finder`、`com.openai.codex`、`com.openai.chat`、`com.tencent.qq`、`com.electron.lark`；其他应用不进入兼容路径，不按 WebView/原生框架推断。
+- 默认连续“位置 → 尺寸 → 位置”基线不等待。窗口管理设置中的「窗口调整兼容应用」使用本机持久化名单精确匹配 Bundle ID；未配置时由 `WindowAdjustmentPolicy.defaultBundleIdentifiers` 提供原六项：`com.apple.Safari`、`com.apple.finder`、`com.openai.codex`、`com.openai.chat`、`com.tencent.qq`、`com.electron.lark`。用户可选择 `.app` 添加、移除内置/自定义项、确认后恢复默认六项（清除自定义项）；显式空名单保留，未知/未安装标识不自动丢弃，重复添加去重。应用选择仅读取Bundle元信息，不启动应用、不扫描安装目录或监听应用。名单随动作在主线程取值快照传入后台工作者，同屏/居中/跨屏及快捷键/鼠标入口共用；不按 WebView/原生框架推断。
 - 兼容路径仅在本次操作期间尝试关闭原本已启用的 `AXEnhancedUserInterface`，结束（含取消/接口错误）在 defer 中尝试恢复并记录状态；原值 false、不支持或系统 VoiceOver/切换控制开启时不改。该属性不是 Apple 文档化契约，失败不阻断调整；不能宣称其已是 M5 确认根因，不永久改状态或添加全局监听。
 - 兼容路径先观察尺寸变化，再为目标/实际较大尺寸保留空间移动，并在移动后必要时重试一次尺寸，最后按观察尺寸贴边。不能将旧位置/屏幕导致的临时截断缓存为永久最小值；最小高度不能阻止贴底。单次 AX 超时250ms，兼容观察预算2s（不保证中断同步AX调用）；新请求在每次写入/观察前取消旧请求。观察使用真实进展及静默区间，未确认动画抑制时为未变化结果保留350ms启动机会，不再用180ms门槛跳过移动。
 - 原始目标与 `effectiveTarget` 分开记录：`applied` 为原目标到位，`adjustedToObservedSize` 仅表示按当次观察尺寸完成贴边，不等于已证明永久最小尺寸。非精确到位不弹失败Toast，不计入精确目标成功统计；真实AX写入错误仍提示。

@@ -13,11 +13,12 @@ final class WindowControlController {
     func perform(
         _ id: WindowControlID,
         cursorHighlightStyles: Set<CursorHighlightStyle>,
-        crossScreenPreservesLayout: Bool = false
+        crossScreenPreservesLayout: Bool = false,
+        compatibleApplications: Set<String> = WindowAdjustmentPolicy.defaultBundleIdentifiers
     ) {
         if let command = WindowControlCatalog.layoutCommand(for: id) {
             performWindowAction(id: id) {
-                try await WindowLayoutService.applyLayout(command)
+                try await WindowLayoutService.applyLayout(command, compatibleApplications: compatibleApplications)
             }
             return
         }
@@ -25,13 +26,15 @@ final class WindowControlController {
         switch id {
         case .moveWindowToNextScreen:
             performWindowAction(id: id) {
-                try await WindowLayoutService.moveFocusedWindowToNextScreen(preservingLayout: crossScreenPreservesLayout)
+                try await WindowLayoutService.moveFocusedWindowToNextScreen(
+                    preservingLayout: crossScreenPreservesLayout, compatibleApplications: compatibleApplications
+                )
             }
         case .movePointerToNextScreen:
             movePointerToNextScreen(cursorHighlightStyles: cursorHighlightStyles)
         case .centerWindow:
             performWindowAction(id: id) {
-                try await WindowLayoutService.centerFocusedWindow()
+                try await WindowLayoutService.centerFocusedWindow(compatibleApplications: compatibleApplications)
             }
         default:
             break

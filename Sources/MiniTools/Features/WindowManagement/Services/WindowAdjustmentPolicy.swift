@@ -5,12 +5,15 @@ enum WindowAdjustmentPolicy: String {
     case baseline
     case compatible
 
-    static func resolve(bundleIdentifier: String?) -> Self {
-        switch bundleIdentifier {
-        case "com.apple.Safari", "com.apple.finder", "com.openai.codex",
-             "com.openai.chat", "com.tencent.qq", "com.electron.lark": .compatible
-        default: .baseline
-        }
+    static let defaultBundleIdentifiers: Set<String> = [
+        "com.apple.Safari", "com.apple.finder", "com.openai.codex",
+        "com.openai.chat", "com.tencent.qq", "com.electron.lark"
+    ]
+
+    static func resolve(bundleIdentifier: String?,
+                        compatibleApplications: Set<String> = defaultBundleIdentifiers) -> Self {
+        guard let bundleIdentifier, compatibleApplications.contains(bundleIdentifier) else { return .baseline }
+        return .compatible
     }
 }
 

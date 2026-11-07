@@ -282,6 +282,8 @@ private struct SettingsCategoryDetail: View {
 
     @ViewBuilder
     private var windowManagementSettings: some View {
+        WindowCompatibilitySettingsView(settings: settings)
+
         Section("四角") {
             ForEach(
                 windowDescriptors([.upperLeft, .upperRight, .lowerLeft, .lowerRight])

@@ -143,7 +143,8 @@ enum WindowLayoutService {
             geometries: [WindowLayoutScreenGeometry],
             ticket: UInt64,
             requestedAt: TimeInterval,
-            assistiveTechnologyEnabled: Bool
+            assistiveTechnologyEnabled: Bool,
+            compatibleApplications: Set<String>
         ) throws -> WindowActionOutcome {
             let trace = WindowAdjustmentTrace(command: action.id.rawValue, requestedAt: requestedAt)
             var lastFrame: CGRect?
@@ -198,7 +199,9 @@ enum WindowLayoutService {
                     return value
                 }
                 trace.event("initialAccessibilityFrame", frame: axFrame)
-                let policy = WindowAdjustmentPolicy.resolve(bundleIdentifier: application.bundleIdentifier)
+                let policy = WindowAdjustmentPolicy.resolve(
+                    bundleIdentifier: application.bundleIdentifier, compatibleApplications: compatibleApplications
+                )
                 trace.event(policy.rawValue)
                 let current = try read()
                 let visible = WindowGeometry.screenGeometry(for: current, geometries: geometries).visibleFrame
@@ -316,22 +319,28 @@ enum WindowLayoutService {
     private static let worker = Worker()
 
     @MainActor
-    static func applyLayout(_ command: WindowLayoutCommand) async throws -> WindowActionOutcome {
-        try await submit(.layout(command))
+    static func applyLayout(_ command: WindowLayoutCommand,
+                            compatibleApplications: Set<String> = WindowAdjustmentPolicy.defaultBundleIdentifiers) async throws -> WindowActionOutcome {
+        try await submit(.layout(command), compatibleApplications: compatibleApplications)
     }
 
     @MainActor
-    static func moveFocusedWindowToNextScreen(preservingLayout: Bool = false) async throws -> WindowActionOutcome {
-        try await submit(.nextScreen(preservingLayout: preservingLayout))
+    static func moveFocusedWindowToNextScreen(
+        preservingLayout: Bool = false,
+        compatibleApplications: Set<String> = WindowAdjustmentPolicy.defaultBundleIdentifiers
+    ) async throws -> WindowActionOutcome {
+        try await submit(.nextScreen(preservingLayout: preservingLayout), compatibleApplications: compatibleApplications)
     }
 
     @MainActor
-    static func centerFocusedWindow() async throws -> WindowActionOutcome {
-        try await submit(.center)
+    static func centerFocusedWindow(
+        compatibleApplications: Set<String> = WindowAdjustmentPolicy.defaultBundleIdentifiers
+    ) async throws -> WindowActionOutcome {
+        try await submit(.center, compatibleApplications: compatibleApplications)
     }
 
     @MainActor
-    private static func submit(_ action: Action) async throws -> WindowActionOutcome {
+    private static func submit(_ action: Action, compatibleApplications: Set<String>) async throws -> WindowActionOutcome {
         try AccessibilityAuthorization.requirePermission()
         let ticket = gate.issue()
         let requestedAt = ProcessInfo.processInfo.systemUptime
@@ -345,7 +354,8 @@ enum WindowLayoutService {
                         continuation.resume(returning: try worker.execute(
                             action, frontmost: frontmost, geometries: geometries,
                             ticket: ticket, requestedAt: requestedAt,
-                            assistiveTechnologyEnabled: assistiveTechnologyEnabled
+                            assistiveTechnologyEnabled: assistiveTechnologyEnabled,
+                            compatibleApplications: compatibleApplications
                         ))
                     } catch {
                         continuation.resume(throwing: error)

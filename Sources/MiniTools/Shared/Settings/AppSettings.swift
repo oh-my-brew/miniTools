@@ -9,6 +9,7 @@ final class AppSettings: ObservableObject {
         static let clipboardHistoryRetention = "clipboardHistoryRetention"
         static let lastFeaturePanel = "lastFeaturePanel"
         static let windowControlShortcuts = "windowControlShortcuts"
+        static let windowCompatibilityApplications = "windowCompatibilityApplications"
         static let crossScreenPreservesLayout = "crossScreenPreservesLayout"
         static let compressionQuality = "compressionQuality"
         static let cursorHighlightStyles = "cursorHighlightStyles"
@@ -34,6 +35,7 @@ final class AppSettings: ObservableObject {
     @Published private(set) var clipboardHistoryRetention: ClipboardHistoryRetention
     @Published private(set) var lastFeaturePanel: FeaturePanelKind
     @Published private(set) var windowControlShortcuts: [WindowControlID: KeyboardShortcut]
+    @Published private(set) var windowCompatibilityApplications: Set<String>
     @Published private(set) var crossScreenPreservesLayout: Bool
     @Published private(set) var cursorHighlightStyles: Set<CursorHighlightStyle>
     @Published private(set) var mouseBindings: [MouseBindingKey: AppCommand]
@@ -64,6 +66,11 @@ final class AppSettings: ObservableObject {
         lastFeaturePanel = defaults.string(forKey: Keys.lastFeaturePanel)
             .flatMap(FeaturePanelKind.init(rawValue:)) ?? .encodingConversion
         windowControlShortcuts = Self.loadWindowControlShortcuts(defaults: defaults)
+        // Missing/invalid storage uses the shipped defaults; an explicitly empty
+        // list is a user decision and must not re-enable the built-in entries.
+        windowCompatibilityApplications = defaults.stringArray(forKey: Keys.windowCompatibilityApplications)
+            .map { Set($0.filter(WindowCompatibilityApplication.isValidBundleIdentifier)) }
+            ?? WindowAdjustmentPolicy.defaultBundleIdentifiers
         crossScreenPreservesLayout = defaults.bool(forKey: Keys.crossScreenPreservesLayout)
         var loadedCursorHighlightStyles = Self.loadCursorHighlightStyles(defaults: defaults)
         if !defaults.bool(forKey: Keys.restoredHikariCursorStyle) {
@@ -159,6 +166,25 @@ final class AppSettings: ObservableObject {
         guard normalized != mouseDragThresholdRatio else { return }
         mouseDragThresholdRatio = normalized
         defaults.set(normalized, forKey: Keys.mouseDragThresholdRatio)
+    }
+
+    func addWindowCompatibilityApplication(_ identifier: String) {
+        guard WindowCompatibilityApplication.isValidBundleIdentifier(identifier) else { return }
+        updateWindowCompatibilityApplications(windowCompatibilityApplications.union([identifier]))
+    }
+
+    func removeWindowCompatibilityApplication(_ identifier: String) {
+        updateWindowCompatibilityApplications(windowCompatibilityApplications.subtracting([identifier]))
+    }
+
+    func restoreDefaultWindowCompatibilityApplications() {
+        updateWindowCompatibilityApplications(WindowAdjustmentPolicy.defaultBundleIdentifiers)
+    }
+
+    private func updateWindowCompatibilityApplications(_ applications: Set<String>) {
+        guard applications != windowCompatibilityApplications else { return }
+        windowCompatibilityApplications = applications
+        defaults.set(applications.sorted(), forKey: Keys.windowCompatibilityApplications)
     }
 
     func updateCrossScreenPreservesLayout(_ enabled: Bool) {
