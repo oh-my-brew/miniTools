@@ -78,6 +78,8 @@ final class WindowControlController {
                     title: title,
                     category: .windowManagement
                 )
+            } catch is CancellationError {
+                // A newer explicit window command superseded this operation.
             } catch {
                 self?.report(error)
             }

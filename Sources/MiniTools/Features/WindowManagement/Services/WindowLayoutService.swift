@@ -14,6 +14,7 @@ enum WindowLayoutError: LocalizedError {
     case fullScreenWindow
     case unreadableWindowFrame
     case cannotResizeWindow(AXError)
+    case frameDidNotConverge
     case notEnoughScreens
     case cannotReadPointerPosition
     case cannotMovePointer(CGError)
@@ -32,6 +33,8 @@ enum WindowLayoutError: LocalizedError {
             return "无法读取当前窗口的位置或尺寸"
         case let .cannotResizeWindow(error):
             return "当前窗口不允许调整（错误码 \(error.rawValue)）"
+        case .frameDidNotConverge:
+            return "窗口未能调整到目标布局，请查看窗口诊断记录"
         case .notEnoughScreens:
             return "当前只检测到一块显示器"
         case .cannotReadPointerPosition:
@@ -46,142 +49,280 @@ enum WindowLayoutService {
     private struct TargetApplication: Sendable {
         let processIdentifier: pid_t
         let name: String
+        let bundleIdentifier: String?
     }
 
+    private enum Action: Sendable {
+        case layout(WindowLayoutCommand)
+        case center
+        case nextScreen
+
+        var id: WindowControlID {
+            switch self {
+            case .layout(let command): command.id
+            case .center: .centerWindow
+            case .nextScreen: .moveWindowToNextScreen
+            }
+        }
+    }
+
+    /// Invalidation is independent of the AX worker, including during a blocked
+    /// AX call. An obsolete operation cannot issue its next write.
+    private final class RequestGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var generation: UInt64 = 0
+
+        func issue() -> UInt64 {
+            lock.lock()
+            defer { lock.unlock() }
+            generation &+= 1
+            return generation
+        }
+
+        func isCurrent(_ ticket: UInt64) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return generation == ticket
+        }
+
+        func check(_ ticket: UInt64) throws {
+            if !isCurrent(ticket) { throw CancellationError() }
+        }
+
+        func cancel(_ ticket: UInt64) {
+            lock.lock()
+            defer { lock.unlock() }
+            if generation == ticket { generation &+= 1 }
+        }
+    }
+
+    private final class Worker: @unchecked Sendable {
+        let queue = DispatchQueue(label: "com.omzcj.minitools.window-adjustment", qos: .userInitiated)
+        // All AX elements and intent state are confined to queue.
+        struct Intent {
+            let window: AXUIElement
+            let command: WindowControlID
+            let target: CGRect
+            let visible: CGRect
+            let processID: pid_t
+        }
+        var intent: Intent?
+
+        func execute(
+            _ action: Action,
+            frontmost: pid_t?,
+            geometries: [WindowLayoutScreenGeometry],
+            ticket: UInt64,
+            requestedAt: TimeInterval
+        ) throws -> WindowActionOutcome {
+            let trace = WindowAdjustmentTrace(command: action.id.rawValue, requestedAt: requestedAt)
+            var lastFrame: CGRect?
+            defer {
+                // Only a superseded pending intention can drive the next cycle.
+                // Completed, failed or manually restarted operations use actual geometry.
+                if gate.isCurrent(ticket) { intent = nil }
+            }
+            do {
+                // Count successive cycle presses even when their intermediate
+                // writes are superseded, without re-querying AX for every queued press.
+                if !gate.isCurrent(ticket), let pending = intent,
+                   pending.processID == frontmost,
+                   case .layout(let command) = action, command.id == pending.command {
+                    let targets = command.frames.map { WindowGeometry.targetFrame(for: $0, in: pending.visible) }
+                    if let next = WindowGeometry.nextTarget(currentFrame: pending.target, candidates: targets) {
+                        intent = Intent(window: pending.window, command: pending.command, target: next,
+                                        visible: pending.visible, processID: pending.processID)
+                        trace.plan(initial: pending.target, target: next, visible: pending.visible)
+                        trace.event("coalescedPendingIntent")
+                        throw CancellationError()
+                    }
+                }
+                trace.event("resolveApplication")
+                let application = try activeApplication(frontmostProcessIdentifier: frontmost)
+                trace.identify(processID: application.processIdentifier, application: application.bundleIdentifier,
+                               windowID: nil, frameSource: "unresolved")
+                trace.event("resolveWindow")
+                let window = try focusedWindow(for: application)
+                AXUIElementSetMessagingTimeout(window, 0.25)
+                try ensureWindowCanBeAdjusted(window)
+                trace.event("readInitialFrame")
+                let axFrame = try readFrame(of: window)
+                let windowID = WindowServerWindowInspector.matchingWindowID(
+                    processIdentifier: application.processIdentifier, accessibilityFrame: axFrame
+                )
+                trace.identify(processID: application.processIdentifier,
+                               application: application.bundleIdentifier, windowID: windowID,
+                               frameSource: windowID == nil ? "accessibilityOnly" : "windowServer")
+                func read() throws -> CGRect {
+                    let value: CGRect
+                    if let windowID {
+                        guard let observed = WindowServerWindowInspector.frame(
+                            windowID: windowID, processIdentifier: application.processIdentifier
+                        ) else { throw WindowLayoutError.unreadableWindowFrame }
+                        value = observed
+                    } else {
+                        value = try readFrame(of: window)
+                    }
+                    lastFrame = value
+                    return value
+                }
+                let current = try read()
+                let visible = WindowGeometry.screenGeometry(for: current, geometries: geometries).visibleFrame
+                var target: CGRect
+                var candidateIndex = 0
+                var destination = visible
+                switch action {
+                case .layout(let command):
+                    let targets = command.frames.map { WindowGeometry.targetFrame(for: $0, in: visible) }
+                    let cycleFrame: CGRect
+                    if let intent, CFEqual(intent.window, window), intent.command == action.id,
+                       intent.visible == visible {
+                        cycleFrame = intent.target
+                    } else {
+                        cycleFrame = current
+                    }
+                    guard let next = WindowGeometry.nextTarget(currentFrame: cycleFrame, candidates: targets) else {
+                        throw WindowLayoutError.unreadableWindowFrame
+                    }
+                    target = next
+                    candidateIndex = targets.firstIndex(of: next) ?? 0
+                case .center:
+                    target = WindowGeometry.centeredFrame(current, in: visible)
+                case .nextScreen:
+                    guard geometries.count > 1 else { throw WindowLayoutError.notEnoughScreens }
+                    let index = WindowGeometry.screenIndex(containing: current.center, geometries: geometries)
+                    destination = geometries[(index + 1) % geometries.count].visibleFrame
+                    // Cross-screen size semantics intentionally remain unchanged.
+                    target = WindowGeometry.frameByMoving(current, from: visible, to: destination)
+                }
+                intent = Intent(window: window, command: action.id, target: target, visible: visible,
+                                processID: application.processIdentifier)
+                trace.plan(initial: current, target: target, visible: destination)
+                trace.event("resolved", frame: current)
+                try gate.check(ticket)
+                let result = try WindowFrameAdjustment.run(
+                    initial: current, target: target, visible: destination,
+                    read: read,
+                    position: { point in
+                        try gate.check(ticket)
+                        trace.event("writePositionRequested")
+                        let status = try setPosition(point, of: window)
+                        trace.event("writePosition", axStatus: status.rawValue)
+                        try gate.check(ticket)
+                    },
+                    size: { size in
+                        try gate.check(ticket)
+                        trace.event("writeSizeRequested")
+                        let status = try setSize(size, of: window)
+                        trace.event("writeSize", axStatus: status.rawValue)
+                        try gate.check(ticket)
+                    },
+                    check: { try gate.check(ticket) }, trace: trace
+                )
+                try gate.check(ticket)
+                lastFrame = result.frame
+                trace.finish(result.outcome.rawValue, frame: result.frame)
+                guard result.outcome == .applied else { throw WindowLayoutError.frameDidNotConverge }
+                return WindowActionOutcome(candidateIndex: candidateIndex)
+            } catch is CancellationError {
+                trace.finish("superseded", frame: lastFrame)
+                throw CancellationError()
+            } catch WindowLayoutError.frameDidNotConverge {
+                // The engine already recorded the actual non-success result.
+                throw WindowLayoutError.frameDidNotConverge
+            } catch {
+                switch error {
+                case WindowLayoutError.cannotResizeWindow(let status):
+                    trace.event("axFailure", axStatus: status.rawValue)
+                case WindowLayoutError.invalidAccessibilityWindowState:
+                    trace.event("invalidAccessibilityWindowState")
+                case WindowLayoutError.noFocusedWindow:
+                    trace.event("noFocusedWindow")
+                case WindowLayoutError.unreadableWindowFrame:
+                    trace.event("unreadableWindowFrame")
+                case WindowLayoutError.fullScreenWindow:
+                    trace.event("fullScreenWindow")
+                default:
+                    trace.event("resolutionFailed")
+                }
+                trace.finish("failed", frame: lastFrame)
+                throw error
+            }
+        }
+    }
+
+    private static let gate = RequestGate()
+    private static let worker = Worker()
+
+    @MainActor
     static func applyLayout(_ command: WindowLayoutCommand) async throws -> WindowActionOutcome {
-        try AccessibilityAuthorization.requirePermission()
-        let application = try await activeApplication()
-        let geometries = await WindowGeometry.screenGeometries()
-
-        return try await Task.detached(priority: .userInitiated) {
-            let window = try focusedWindow(for: application)
-            try ensureWindowCanBeAdjusted(window)
-
-            let currentFrame = try frame(of: window, for: application)
-            let visibleFrame = WindowGeometry.screenGeometry(
-                for: currentFrame,
-                geometries: geometries
-            ).visibleFrame
-            let targets = command.frames.map {
-                WindowGeometry.targetFrame(for: $0, in: visibleFrame)
-            }
-            guard let target = WindowGeometry.nextTarget(
-                currentFrame: currentFrame,
-                candidates: targets
-            ) else {
-                throw WindowLayoutError.unreadableWindowFrame
-            }
-            try setFrame(
-                target,
-                of: window,
-                visibleFrame: visibleFrame,
-                processIdentifier: application.processIdentifier
-            )
-            return WindowActionOutcome(candidateIndex: targets.firstIndex(of: target) ?? 0)
-        }.value
-    }
-
-    static func moveFocusedWindowToNextScreen() async throws -> WindowActionOutcome {
-        try AccessibilityAuthorization.requirePermission()
-        let application = try await activeApplication()
-        let geometries = await WindowGeometry.screenGeometries()
-
-        return try await Task.detached(priority: .userInitiated) {
-            let window = try focusedWindow(for: application)
-            try ensureWindowCanBeAdjusted(window)
-
-            let currentFrame = try frame(of: window, for: application)
-            guard geometries.count > 1 else { throw WindowLayoutError.notEnoughScreens }
-            let currentIndex = WindowGeometry.screenIndex(
-                containing: currentFrame.center,
-                geometries: geometries
-            )
-            let nextIndex = (currentIndex + 1) % geometries.count
-            let destination = geometries[nextIndex]
-            let target = WindowGeometry.frameByMoving(
-                currentFrame,
-                from: geometries[currentIndex].visibleFrame,
-                to: destination.visibleFrame
-            )
-            try setFrame(
-                target,
-                of: window,
-                visibleFrame: destination.visibleFrame,
-                processIdentifier: application.processIdentifier
-            )
-            return WindowActionOutcome(candidateIndex: 0)
-        }.value
-    }
-
-    static func centerFocusedWindow() async throws -> WindowActionOutcome {
-        try AccessibilityAuthorization.requirePermission()
-        let application = try await activeApplication()
-        let geometries = await WindowGeometry.screenGeometries()
-
-        return try await Task.detached(priority: .userInitiated) {
-            let window = try focusedWindow(for: application)
-            try ensureWindowCanBeAdjusted(window)
-
-            let currentFrame = try frame(of: window, for: application)
-            let visibleFrame = WindowGeometry.screenGeometry(
-                for: currentFrame,
-                geometries: geometries
-            ).visibleFrame
-            try setFrame(
-                WindowGeometry.centeredFrame(currentFrame, in: visibleFrame),
-                of: window,
-                visibleFrame: visibleFrame,
-                processIdentifier: application.processIdentifier
-            )
-            return WindowActionOutcome(candidateIndex: 0)
-        }.value
+        try await submit(.layout(command))
     }
 
     @MainActor
-    private static func activeApplication() throws -> TargetApplication {
-        let frontmostProcessIdentifier = NSWorkspace.shared.frontmostApplication?
-            .processIdentifier
-        let focusedProcessIdentifier = AccessibilityClient.systemFocusedProcessIdentifier()
+    static func moveFocusedWindowToNextScreen() async throws -> WindowActionOutcome {
+        try await submit(.nextScreen)
+    }
+
+    @MainActor
+    static func centerFocusedWindow() async throws -> WindowActionOutcome {
+        try await submit(.center)
+    }
+
+    @MainActor
+    private static func submit(_ action: Action) async throws -> WindowActionOutcome {
+        try AccessibilityAuthorization.requirePermission()
+        let ticket = gate.issue()
+        let requestedAt = ProcessInfo.processInfo.systemUptime
+        let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let geometries = WindowGeometry.screenGeometries()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                worker.queue.async {
+                    do {
+                        continuation.resume(returning: try worker.execute(
+                            action, frontmost: frontmost, geometries: geometries,
+                            ticket: ticket, requestedAt: requestedAt
+                        ))
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
+        } onCancel: {
+            gate.cancel(ticket)
+        }
+    }
+
+    private static func activeApplication(frontmostProcessIdentifier: pid_t?) throws -> TargetApplication {
+        let focusedProcessIdentifier = AccessibilityClient.systemFocusedProcessIdentifier(timeout: 0.25)
         let processIdentifiers = WindowTargetResolver.candidateProcessIdentifiers(
             accessibilityFocusedProcessIdentifier: focusedProcessIdentifier,
             frontmostProcessIdentifier: frontmostProcessIdentifier,
             currentProcessIdentifier: ProcessInfo.processInfo.processIdentifier
         )
-
         for processIdentifier in processIdentifiers {
-            guard let application = NSRunningApplication(
-                processIdentifier: processIdentifier
-            ) else {
-                continue
-            }
-            let target = TargetApplication(
-                processIdentifier: processIdentifier,
-                name: application.localizedName ?? "当前应用"
-            )
-
-            // A non-activating panel can own the system keyboard focus while a
-            // different application remains frontmost. Prefer it only when its
-            // AX tree exposes a real window; otherwise preserve the established
-            // frontmost-application behavior.
+            guard let application = NSRunningApplication(processIdentifier: processIdentifier) else { continue }
+            let target = TargetApplication(processIdentifier: processIdentifier,
+                                           name: application.localizedName ?? "当前应用",
+                                           bundleIdentifier: application.bundleIdentifier)
             if processIdentifier == focusedProcessIdentifier,
                processIdentifier != frontmostProcessIdentifier,
-               !hasAccessibleWindow(for: target) {
-                continue
-            }
+               !hasAccessibleWindow(for: target) { continue }
             return target
         }
         throw WindowLayoutError.noActiveApplication
     }
 
     private static func hasAccessibleWindow(for target: TargetApplication) -> Bool {
-        let application = AccessibilityClient.application(for: target.processIdentifier)
+        let application = AccessibilityClient.application(for: target.processIdentifier, timeout: 0.25)
         return windowCandidates(from: application).contains {
             $0.role == kAXWindowRole as String
         }
     }
 
     private static func focusedWindow(for target: TargetApplication) throws -> AXUIElement {
-        let application = AccessibilityClient.application(for: target.processIdentifier)
+        let application = AccessibilityClient.application(for: target.processIdentifier, timeout: 0.25)
         let initialCandidates = windowCandidates(from: application)
         if let window = initialCandidates.first(where: {
             $0.role == kAXWindowRole as String
@@ -217,65 +358,25 @@ enum WindowLayoutService {
     private static func windowCandidates(
         from application: AXUIElement
     ) -> [(element: AXUIElement, role: String?)] {
-        let directCandidates = [
-            AccessibilityClient.element(
-                from: application,
-                attribute: kAXFocusedWindowAttribute as CFString
-            ),
-            AccessibilityClient.element(
-                from: application,
-                attribute: kAXMainWindowAttribute as CFString
-            )
-        ].compactMap { $0 }
-        let candidates = directCandidates + AccessibilityClient.elements(
-            from: application,
-            attribute: kAXWindowsAttribute as CFString
-        )
-        let candidatesWithRoles = candidates.map { element in
-            (
-                element: element,
-                role: AccessibilityClient.string(
-                    from: element,
-                    attribute: kAXRoleAttribute as CFString
-                )
-            )
+        var candidates: [(element: AXUIElement, role: String?)] = []
+        for attribute in [kAXFocusedWindowAttribute, kAXMainWindowAttribute] {
+            guard let element = AccessibilityClient.element(from: application, attribute: attribute as CFString) else { continue }
+            let role = AccessibilityClient.string(from: element, attribute: kAXRoleAttribute as CFString)
+            candidates.append((element, role))
+            if role == kAXWindowRole as String { return candidates }
         }
-        return candidatesWithRoles
+        for element in AccessibilityClient.elements(from: application, attribute: kAXWindowsAttribute as CFString) {
+            let role = AccessibilityClient.string(from: element, attribute: kAXRoleAttribute as CFString)
+            candidates.append((element, role))
+            if role == kAXWindowRole as String { break }
+        }
+        return candidates
     }
 
     private static func ensureWindowCanBeAdjusted(_ window: AXUIElement) throws {
         if AccessibilityClient.boolean(from: window, attribute: "AXFullScreen" as CFString) == true {
             throw WindowLayoutError.fullScreenWindow
         }
-    }
-
-    private static func frame(
-        of window: AXUIElement,
-        for application: TargetApplication
-    ) throws -> CGRect {
-        let accessibilityFrame: CGRect
-        do {
-            accessibilityFrame = try readFrame(of: window)
-        } catch WindowLayoutError.unreadableWindowFrame {
-            Thread.sleep(forTimeInterval: 0.04)
-            if let recoveredFrame = try? readFrame(of: window) {
-                accessibilityFrame = recoveredFrame
-            } else {
-                if WindowServerWindowInspector.hasVisibleWindow(
-                    processIdentifier: application.processIdentifier
-                ) {
-                    throw WindowLayoutError.invalidAccessibilityWindowState(application.name)
-                }
-                throw WindowLayoutError.unreadableWindowFrame
-            }
-        }
-
-        // Some applications report the last requested AX frame instead of the
-        // actual constrained frame. WindowServer is the source of truth for
-        // deciding which layout candidate should be selected next.
-        return WindowServerWindowInspector.frontmostVisibleWindowFrame(
-            processIdentifier: application.processIdentifier
-        ) ?? accessibilityFrame
     }
 
     private static func readFrame(of window: AXUIElement) throws -> CGRect {
@@ -309,304 +410,25 @@ enum WindowLayoutService {
         return CGRect(origin: position, size: size)
     }
 
-    private static func setFrame(
-        _ frame: CGRect,
-        of window: AXUIElement,
-        visibleFrame: CGRect,
-        processIdentifier: pid_t
-    ) throws {
-        let initialFrame = WindowServerWindowInspector.frontmostVisibleWindowFrame(
-            processIdentifier: processIdentifier
-        ) ?? (try? readFrame(of: window))
-        guard let initialFrame else { throw WindowLayoutError.unreadableWindowFrame }
-
-        let mutationOrder = WindowGeometry.frameMutationOrder(
-            currentFrame: initialFrame,
-            targetFrame: frame,
-            visibleFrame: visibleFrame
-        )
-        switch mutationOrder {
-        case .positionThenSize:
-            _ = try positionBeforeResize(
-                initialFrame: initialFrame,
-                targetFrame: frame,
-                window: window,
-                processIdentifier: processIdentifier
-            )
-            if WindowGeometry.correctedSizeAfterApplyingFrame(
-                actualFrame: initialFrame,
-                targetFrame: frame
-            ) != nil {
-                try setSize(frame.size, of: window)
-            }
-        case .sizeThenPosition:
-            if WindowGeometry.correctedSizeAfterApplyingFrame(
-                actualFrame: initialFrame,
-                targetFrame: frame
-            ) != nil {
-                try setSize(frame.size, of: window)
-            }
-            if WindowGeometry.correctedOriginAfterApplyingFrame(
-                actualFrame: initialFrame,
-                targetFrame: frame
-            ) != nil {
-                try setPosition(frame.origin, of: window)
-            }
-        }
-
-        // Most applications accept the two AX writes immediately. Give
-        // WindowServer a brief chance to publish the result, then return
-        // without entering Safari's slower settlement and retry path.
-        let fastFrame = waitForFastFrameResult(
-            initialFrame: initialFrame,
-            targetFrame: frame,
-            window: window,
-            processIdentifier: processIdentifier
-        )
-        switch WindowGeometry.frameFollowUp(actualFrame: fastFrame, targetFrame: frame) {
-        case .complete:
-            return
-        case .correctPosition:
-            try correctPositionUntilStable(
-                initialFrame: fastFrame,
-                targetFrame: frame,
-                window: window,
-                processIdentifier: processIdentifier
-            )
-        case .settleAndRetrySize:
-            let settledFrame = waitForFrameToSettle(
-                initialFrame: initialFrame,
-                targetFrame: frame,
-                window: window,
-                processIdentifier: processIdentifier
-            ) ?? fastFrame
-            let resizedFrame = try retrySizeUntilAccepted(
-                initialFrame: settledFrame,
-                targetFrame: frame,
-                window: window,
-                processIdentifier: processIdentifier
-            )
-            try correctPositionUntilStable(
-                initialFrame: resizedFrame,
-                targetFrame: frame,
-                window: window,
-                processIdentifier: processIdentifier
-            )
-        }
+    private static func setPosition(_ point: CGPoint, of window: AXUIElement) throws -> AXError {
+        var point = point
+        guard let value = AXValueCreate(.cgPoint, &point) else { throw WindowLayoutError.unreadableWindowFrame }
+        return try set(value, attribute: kAXPositionAttribute as CFString, on: window)
     }
 
-    private static func setPosition(
-        _ point: CGPoint,
-        of window: AXUIElement
-    ) throws {
-        var position = point
-        guard let value = AXValueCreate(.cgPoint, &position) else {
-            throw WindowLayoutError.unreadableWindowFrame
-        }
-        try set(value, attribute: kAXPositionAttribute as CFString, on: window)
-    }
-
-    private static func positionBeforeResize(
-        initialFrame: CGRect,
-        targetFrame: CGRect,
-        window: AXUIElement,
-        processIdentifier: pid_t
-    ) throws -> CGRect {
-        guard WindowGeometry.correctedOriginAfterApplyingFrame(
-            actualFrame: initialFrame,
-            targetFrame: targetFrame
-        ) != nil else {
-            return initialFrame
-        }
-
-        try setPosition(targetFrame.origin, of: window)
-        var latestFrame = initialFrame
-        let deadline = ProcessInfo.processInfo.systemUptime + 0.12
-        repeat {
-            Thread.sleep(forTimeInterval: 0.01)
-            guard let frame = currentFrame(
-                of: window,
-                processIdentifier: processIdentifier
-            ) else {
-                continue
-            }
-            latestFrame = frame
-            if WindowGeometry.correctedOriginAfterApplyingFrame(
-                actualFrame: frame,
-                targetFrame: targetFrame
-            ) == nil {
-                return frame
-            }
-        } while ProcessInfo.processInfo.systemUptime < deadline
-
-        return try correctPositionUntilStable(
-            initialFrame: latestFrame,
-            targetFrame: targetFrame,
-            window: window,
-            processIdentifier: processIdentifier
-        )
-    }
-
-    private static func waitForFastFrameResult(
-        initialFrame: CGRect,
-        targetFrame: CGRect,
-        window: AXUIElement,
-        processIdentifier: pid_t
-    ) -> CGRect {
-        if WindowGeometry.frameFollowUp(
-            actualFrame: initialFrame,
-            targetFrame: targetFrame
-        ) == .complete {
-            return initialFrame
-        }
-        var latestFrame = initialFrame
-        let deadline = ProcessInfo.processInfo.systemUptime + 0.12
-        repeat {
-            Thread.sleep(forTimeInterval: 0.01)
-            guard let frame = currentFrame(
-                of: window,
-                processIdentifier: processIdentifier
-            ) else {
-                continue
-            }
-            latestFrame = frame
-            if WindowGeometry.frameFollowUp(
-                actualFrame: frame,
-                targetFrame: targetFrame
-            ) == .complete {
-                return frame
-            }
-        } while ProcessInfo.processInfo.systemUptime < deadline
-        return latestFrame
-    }
-
-    private static func waitForFrameToSettle(
-        initialFrame: CGRect?,
-        targetFrame: CGRect,
-        window: AXUIElement,
-        processIdentifier: pid_t
-    ) -> CGRect? {
-        guard let initialFrame else {
-            Thread.sleep(forTimeInterval: 0.2)
-            return currentFrame(of: window, processIdentifier: processIdentifier)
-        }
-
-        var tracker = WindowFrameSettlementTracker(
-            initialFrame: initialFrame,
-            targetFrame: targetFrame
-        )
-        var latestFrame = initialFrame
-        let deadline = ProcessInfo.processInfo.systemUptime + 0.8
-
-        repeat {
-            Thread.sleep(forTimeInterval: 0.025)
-            guard let frame = currentFrame(
-                of: window,
-                processIdentifier: processIdentifier
-            ) else {
-                continue
-            }
-            latestFrame = frame
-            if tracker.record(frame) {
-                return frame
-            }
-        } while ProcessInfo.processInfo.systemUptime < deadline
-
-        return latestFrame
-    }
-
-    @discardableResult
-    private static func correctPositionUntilStable(
-        initialFrame: CGRect,
-        targetFrame: CGRect,
-        window: AXUIElement,
-        processIdentifier: pid_t
-    ) throws -> CGRect {
-        var actualFrame = initialFrame
-
-        // A resize can arrive in separate width and height phases. Even after
-        // the size appears stable, Safari may apply one final origin change.
-        // Verify the WindowServer frame after each correction so one shortcut
-        // invocation converges on the requested position.
-        for _ in 0..<3 {
-            guard let correctedPosition = WindowGeometry.correctedOriginAfterApplyingFrame(
-                actualFrame: actualFrame,
-                targetFrame: targetFrame
-            ) else {
-                return actualFrame
-            }
-            try setPosition(correctedPosition, of: window)
-            Thread.sleep(forTimeInterval: 0.08)
-            guard let refreshedFrame = currentFrame(
-                of: window,
-                processIdentifier: processIdentifier
-            ) else {
-                return actualFrame
-            }
-            actualFrame = refreshedFrame
-        }
-        return actualFrame
-    }
-
-    private static func retrySizeUntilAccepted(
-        initialFrame: CGRect,
-        targetFrame: CGRect,
-        window: AXUIElement,
-        processIdentifier: pid_t
-    ) throws -> CGRect {
-        var actualFrame = initialFrame
-
-        // Safari can acknowledge an AXSize write before both dimensions reach
-        // their final values. Retry the requested size within this invocation;
-        // bounded retries also avoid hanging on applications with hard minimums.
-        for _ in 0..<2 {
-            guard let correctedSize = WindowGeometry.correctedSizeAfterApplyingFrame(
-                actualFrame: actualFrame,
-                targetFrame: targetFrame
-            ) else {
-                return actualFrame
-            }
-            try setSize(correctedSize, of: window)
-            Thread.sleep(forTimeInterval: 0.12)
-            guard let refreshedFrame = currentFrame(
-                of: window,
-                processIdentifier: processIdentifier
-            ) else {
-                return actualFrame
-            }
-            actualFrame = refreshedFrame
-        }
-        return actualFrame
-    }
-
-    private static func setSize(
-        _ size: CGSize,
-        of window: AXUIElement
-    ) throws {
+    private static func setSize(_ size: CGSize, of window: AXUIElement) throws -> AXError {
         var size = size
-        guard let value = AXValueCreate(.cgSize, &size) else {
-            throw WindowLayoutError.unreadableWindowFrame
-        }
-        try set(value, attribute: kAXSizeAttribute as CFString, on: window)
+        guard let value = AXValueCreate(.cgSize, &size) else { throw WindowLayoutError.unreadableWindowFrame }
+        return try set(value, attribute: kAXSizeAttribute as CFString, on: window)
     }
 
-    private static func currentFrame(
-        of window: AXUIElement,
-        processIdentifier: pid_t
-    ) -> CGRect? {
-        WindowServerWindowInspector.frontmostVisibleWindowFrame(
-            processIdentifier: processIdentifier
-        ) ?? (try? readFrame(of: window))
-    }
-
-    private static func set(
-        _ value: CFTypeRef,
-        attribute: CFString,
-        on window: AXUIElement
-    ) throws {
+    private static func set(_ value: CFTypeRef, attribute: CFString, on window: AXUIElement) throws -> AXError {
         let result = AccessibilityClient.setValue(value, on: window, attribute: attribute)
-        guard result == .success else {
+        // A reply timeout is ambiguous, not proof of failure or success. The
+        // same-window observation loop must verify its visible result.
+        guard result == .success || result == .cannotComplete else {
             throw WindowLayoutError.cannotResizeWindow(result)
         }
+        return result
     }
 }
