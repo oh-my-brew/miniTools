@@ -2,6 +2,7 @@ import SwiftUI
 
 private enum SettingsCategory: String, CaseIterable, Identifiable {
     case general
+    case encodingTools
     case clipboardHistory
     case defaultApplications
     case windowManagement
@@ -16,6 +17,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general: "通用"
+        case .encodingTools: "编码与工具"
         case .clipboardHistory: "剪贴板历史"
         case .defaultApplications: "默认应用"
         case .windowManagement: "窗口管理"
@@ -30,7 +32,9 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .general:
-            "配置应用启动、工具面板与转换参数。"
+            "配置登录启动、查看授权状态和当前版本。"
+        case .encodingTools:
+            "配置编码与转换面板快捷键和 JPEG 压缩质量。"
         case .clipboardHistory:
             "配置本机剪贴板历史、保留期限和唤起快捷键。"
         case .defaultApplications:
@@ -53,6 +57,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .general: "gearshape"
+        case .encodingTools: "hammer"
         case .clipboardHistory: "clipboard"
         case .defaultApplications: "doc.text"
         case .windowManagement: "macwindow"
@@ -149,6 +154,8 @@ private struct SettingsCategoryDetail: View {
             switch category {
             case .general:
                 generalSettings
+            case .encodingTools:
+                encodingToolsSettings
             case .clipboardHistory:
                 clipboardHistorySettings
             case .defaultApplications:
@@ -214,6 +221,18 @@ private struct SettingsCategoryDetail: View {
             }
         }
 
+        GeneralAuthorizationSettingsView()
+
+        Section("版本") {
+            LabeledContent(
+                "当前版本",
+                value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知"
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var encodingToolsSettings: some View {
         Section("唤起") {
             panelShortcutRow
         }
@@ -642,8 +661,8 @@ private struct SettingsCategoryDetail: View {
 
     private var panelShortcutRow: some View {
         shortcutRow(
-            title: "全局快捷键",
-            subtitle: "打开上次使用的面板",
+            title: "打开编码与转换面板",
+            subtitle: "默认 ⌃⌥⇧⌘Space；保留上次使用的面板页签",
             shortcut: settings.panelShortcut,
             error: shortcutCoordinator.panelError,
             onChange: shortcutCoordinator.updatePanelShortcut

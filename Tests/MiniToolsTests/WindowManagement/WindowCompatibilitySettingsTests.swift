@@ -6,14 +6,14 @@ final class WindowCompatibilitySettingsTests: XCTestCase {
     private let notes = "com.apple.Notes"
 
     @MainActor
-    func testNewSettingsPreserveExistingSixApplications() throws {
+    func testNewSettingsIncludeNotesAlongsideExistingApplications() throws {
         let (defaults, suite) = try makeDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = AppSettings(defaults: defaults)
         XCTAssertEqual(settings.windowCompatibilityApplications, WindowAdjustmentPolicy.defaultBundleIdentifiers)
-        XCTAssertEqual(settings.windowCompatibilityApplications.count, 6)
+        XCTAssertEqual(settings.windowCompatibilityApplications.count, 7)
         XCTAssertEqual(WindowAdjustmentPolicy.resolve(bundleIdentifier: notes,
-                       compatibleApplications: settings.windowCompatibilityApplications), .baseline)
+                       compatibleApplications: settings.windowCompatibilityApplications), .compatible)
     }
 
     @MainActor
@@ -110,10 +110,11 @@ final class WindowCompatibilitySettingsTests: XCTestCase {
         let (defaults, suite) = try makeDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = AppSettings(defaults: defaults)
+        let custom = "com.example.WindowApp"
         let snapshot = settings.windowCompatibilityApplications
-        settings.addWindowCompatibilityApplication(notes)
-        XCTAssertEqual(WindowAdjustmentPolicy.resolve(bundleIdentifier: notes, compatibleApplications: snapshot), .baseline)
-        XCTAssertEqual(WindowAdjustmentPolicy.resolve(bundleIdentifier: notes,
+        settings.addWindowCompatibilityApplication(custom)
+        XCTAssertEqual(WindowAdjustmentPolicy.resolve(bundleIdentifier: custom, compatibleApplications: snapshot), .baseline)
+        XCTAssertEqual(WindowAdjustmentPolicy.resolve(bundleIdentifier: custom,
                        compatibleApplications: settings.windowCompatibilityApplications), .compatible)
     }
 
