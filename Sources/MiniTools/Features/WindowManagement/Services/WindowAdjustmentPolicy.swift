@@ -23,9 +23,11 @@ struct WindowFramePlacement {
     let vertical: Anchor
     let visible: CGRect
     private let relativePosition: CGPoint?
+    private let clampsToVisible: Bool
 
     init(target: CGRect, visible: CGRect) {
         self.visible = visible
+        clampsToVisible = true
         relativePosition = nil
         func anchor(_ start: CGFloat, _ end: CGFloat, _ low: CGFloat, _ high: CGFloat) -> Anchor {
             if abs(start - low) <= 1, abs(end - high) <= 1 { return .center }
@@ -40,12 +42,28 @@ struct WindowFramePlacement {
     /// Keep a free-form cross-screen target's relative position if size is constrained.
     init(relativeTarget target: CGRect, visible: CGRect) {
         self.visible = visible
+        clampsToVisible = true
         horizontal = .center
         vertical = .center
         relativePosition = CGPoint(
             x: visible.width > target.width ? min(1, max(0, (target.minX - visible.minX) / (visible.width - target.width))) : 0.5,
             y: visible.height > target.height ? min(1, max(0, (target.minY - visible.minY) / (visible.height - target.height))) : 0.5
         )
+    }
+
+    /// An explicit corner remains the requested anchor even if the application
+    /// enforces a different size. Do not infer it from a full-width rectangle.
+    init(composed placement: ComposedWindowPlacement, visible: CGRect) {
+        self.visible = visible
+        relativePosition = nil
+        clampsToVisible = false
+        switch placement {
+        case .upperLeft: horizontal = .leading; vertical = .leading
+        case .lowerLeft: horizontal = .leading; vertical = .trailing
+        case .upperRight: horizontal = .trailing; vertical = .leading
+        case .lowerRight: horizontal = .trailing; vertical = .trailing
+        case .center: horizontal = .center; vertical = .center
+        }
     }
 
     func origin(for size: CGSize) -> CGPoint {
@@ -60,7 +78,7 @@ struct WindowFramePlacement {
             case .center: proposed = (low + high - extent) / 2
             case .trailing: proposed = high - extent
             }
-            return max(low, min(proposed, max(low, high - extent)))
+            return clampsToVisible ? max(low, min(proposed, max(low, high - extent))) : round(proposed)
         }
         return CGPoint(x: coordinate(horizontal, size.width, visible.minX, visible.maxX),
                        y: coordinate(vertical, size.height, visible.minY, visible.maxY))

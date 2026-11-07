@@ -322,7 +322,7 @@ private struct SettingsCategoryDetail: View {
         } header: {
             Text("布局方案")
         } footer: {
-            Text("经典布局按区域直接调整；尺寸与位置方案先选择窗口大小，再用 H、L 或 Return 定位。")
+            Text("经典布局按区域直接调整；尺寸与位置方案先选择窗口大小，再用 Y/H/O/L 对齐四角，或用 Return 居中。")
         }
 
         if settings.windowManagementMode == .classic {
