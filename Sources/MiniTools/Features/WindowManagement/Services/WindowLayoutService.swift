@@ -184,10 +184,10 @@ enum WindowLayoutService {
                 }
                 if !gate.isCurrent(ticket), let pending = intent,
                    pending.processID == frontmost,
-                   case .composedPlacement(let placement) = action,
-                   let positioned = WindowGeometry.composedPlacementTarget(
-                       currentFrame: pending.target, visibleFrame: pending.visible, placement: placement
-                   ) {
+                   case .composedPlacement(let placement) = action {
+                    let positioned = WindowGeometry.composedPlacementTarget(
+                        currentFrame: pending.target, visibleFrame: pending.visible, placement: placement
+                    )
                     intent = Intent(window: pending.window, command: action.id, target: positioned.frame,
                                     visible: pending.visible, processID: pending.processID)
                     trace.plan(initial: pending.target, target: positioned.frame, visible: pending.visible)
@@ -257,7 +257,7 @@ enum WindowLayoutService {
                     statisticsID = size.statisticsID
                     title = size.title
                 case .composedPlacement(let placement):
-                    // A fast H/L after a still-pending size command completes that
+                    // A placement after a still-pending size command completes that
                     // intended size; otherwise placement never writes AXSize.
                     let placementFrame: CGRect
                     if let intent, CFEqual(intent.window, window), intent.visible == visible,
@@ -268,14 +268,9 @@ enum WindowLayoutService {
                         placementFrame = current
                         allowsResize = false
                     }
-                    guard let positioned = WindowGeometry.composedPlacementTarget(
+                    let positioned = WindowGeometry.composedPlacementTarget(
                         currentFrame: placementFrame, visibleFrame: visible, placement: placement
-                    ) else {
-                        try gate.check(ticket)
-                        trace.plan(initial: current, target: current, visible: visible)
-                        trace.finish("notApplicable", frame: current)
-                        return WindowActionOutcome(candidateIndex: 0, didReachTarget: false)
-                    }
+                    )
                     target = positioned.frame
                     statisticsID = positioned.statisticsID
                     title = positioned.title
@@ -316,6 +311,9 @@ enum WindowLayoutService {
                         check: { try gate.check(ticket) }, trace: trace,
                         policy: policy, initial: current, allowsResize: allowsResize,
                         placement: {
+                            if case .composedPlacement(let placement) = action {
+                                return WindowFramePlacement(composed: placement, visible: destination)
+                            }
                             if case .nextScreen(let preservingLayout) = action {
                                 return preservingLayout ? WindowFramePlacement(relativeTarget: target, visible: destination) : nil
                             }

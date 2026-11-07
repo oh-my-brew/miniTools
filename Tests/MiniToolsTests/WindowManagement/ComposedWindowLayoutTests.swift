@@ -30,170 +30,113 @@ final class ComposedWindowLayoutTests: XCTestCase {
         XCTAssertEqual(thirdWidth.frame, UnitWindowFrame(1.0 / 3.0, 0, 1.0 / 3.0, 1))
     }
 
-    func testFullSizeIgnoresEveryPlacementCommand() {
-        let visible = CGRect(x: 100, y: 20, width: 1200, height: 900)
-
-        for placement in [
-            ComposedWindowPlacement.leading,
-            .trailing,
-            .center
-        ] {
-            XCTAssertNil(WindowGeometry.composedPlacementTarget(
-                currentFrame: visible,
-                visibleFrame: visible,
-                placement: placement
-            ))
+    func testEachCornerAlignsCorrespondingPointsAndPreservesArbitrarySize() {
+        let visible = CGRect(x: -1440, y: 40, width: 1440, height: 900)
+        let current = CGRect(x: -1100, y: 200, width: 713, height: 627)
+        let expected: [(ComposedWindowPlacement, CGPoint)] = [
+            (.upperLeft, CGPoint(x: -1440, y: 40)),
+            (.lowerLeft, CGPoint(x: -1440, y: 313)),
+            (.upperRight, CGPoint(x: -713, y: 40)),
+            (.lowerRight, CGPoint(x: -713, y: 313))
+        ]
+        for (placement, origin) in expected {
+            let target = WindowGeometry.composedPlacementTarget(currentFrame: current, visibleFrame: visible, placement: placement)
+            XCTAssertEqual(target.frame, CGRect(origin: origin, size: current.size))
         }
     }
 
-    func testFullWidthHalfHeightUsesTopAndBottomWithoutCenter() throws {
+    func testRepeatedCornerPlacementDoesNotCycle() {
+        let visible = CGRect(x: 0, y: -900, width: 1200, height: 860)
+        for placement in corners {
+            let first = WindowGeometry.composedPlacementTarget(
+                currentFrame: CGRect(x: 150, y: -700, width: 600, height: 430), visibleFrame: visible, placement: placement)
+            let second = WindowGeometry.composedPlacementTarget(currentFrame: first.frame, visibleFrame: visible, placement: placement)
+            XCTAssertEqual(second, first)
+        }
+    }
+
+    func testFullWidthAndFullHeightRequireNoSizeClassification() {
         let visible = CGRect(x: 100, y: 20, width: 1200, height: 900)
-        let current = CGRect(x: 100, y: 245, width: 1200, height: 450)
-
-        let top = try XCTUnwrap(WindowGeometry.composedPlacementTarget(
-            currentFrame: current,
-            visibleFrame: visible,
-            placement: .leading
-        ))
-        let bottom = try XCTUnwrap(WindowGeometry.composedPlacementTarget(
-            currentFrame: current,
-            visibleFrame: visible,
-            placement: .trailing
-        ))
-
-        XCTAssertEqual(top.frame, CGRect(x: 100, y: 20, width: 1200, height: 450))
-        XCTAssertEqual(bottom.frame, CGRect(x: 100, y: 470, width: 1200, height: 450))
-        XCTAssertNil(WindowGeometry.composedPlacementTarget(
-            currentFrame: current,
-            visibleFrame: visible,
-            placement: .center
-        ))
+        for size in [visible.size, CGSize(width: 1200, height: 450), CGSize(width: 800, height: 900)] {
+            let current = CGRect(origin: CGPoint(x: 333, y: 222), size: size)
+            for placement in corners {
+                let frame = WindowGeometry.composedPlacementTarget(currentFrame: current, visibleFrame: visible, placement: placement).frame
+                XCTAssertEqual(frame.size, size)
+                switch placement {
+                case .upperLeft: XCTAssertEqual(frame.origin, visible.origin)
+                case .lowerLeft: XCTAssertEqual(frame.minX, visible.minX); XCTAssertEqual(frame.maxY, visible.maxY)
+                case .upperRight: XCTAssertEqual(frame.maxX, visible.maxX); XCTAssertEqual(frame.minY, visible.minY)
+                case .lowerRight: XCTAssertEqual(frame.maxX, visible.maxX); XCTAssertEqual(frame.maxY, visible.maxY)
+                case .center: XCTFail("Unexpected center")
+                }
+            }
+        }
     }
 
-    func testHalfHeightLeadingAndTrailingCommandsCycleWithinTheirOwnSide() throws {
-        let visible = CGRect(x: 100, y: 20, width: 1200, height: 900)
-        let centered = CGRect(x: 400, y: 245, width: 600, height: 450)
-
-        let leftTop = try XCTUnwrap(WindowGeometry.composedPlacementTarget(
-            currentFrame: centered,
-            visibleFrame: visible,
-            placement: .leading
-        ))
-        let leftBottom = try XCTUnwrap(WindowGeometry.composedPlacementTarget(
-            currentFrame: leftTop.frame,
-            visibleFrame: visible,
-            placement: .leading
-        ))
-        let rightTop = try XCTUnwrap(WindowGeometry.composedPlacementTarget(
-            currentFrame: leftBottom.frame,
-            visibleFrame: visible,
-            placement: .trailing
-        ))
-        let rightBottom = try XCTUnwrap(WindowGeometry.composedPlacementTarget(
-            currentFrame: rightTop.frame,
-            visibleFrame: visible,
-            placement: .trailing
-        ))
-
-        XCTAssertEqual(leftTop.frame.origin, CGPoint(x: 100, y: 20))
-        XCTAssertEqual(leftBottom.frame.origin, CGPoint(x: 100, y: 470))
-        XCTAssertEqual(rightTop.frame.origin, CGPoint(x: 700, y: 20))
-        XCTAssertEqual(rightBottom.frame.origin, CGPoint(x: 700, y: 470))
-    }
-
-    func testFullHeightPresetUsesLeftRightAndCenterPositions() throws {
-        let visible = CGRect(x: 100, y: 20, width: 1200, height: 900)
-        let current = CGRect(x: 300, y: 20, width: 800, height: 900)
-
-        let left = try XCTUnwrap(WindowGeometry.composedPlacementTarget(
-            currentFrame: current,
-            visibleFrame: visible,
-            placement: .leading
-        ))
-        let right = try XCTUnwrap(WindowGeometry.composedPlacementTarget(
-            currentFrame: current,
-            visibleFrame: visible,
-            placement: .trailing
-        ))
-        let center = try XCTUnwrap(WindowGeometry.composedPlacementTarget(
-            currentFrame: left.frame,
-            visibleFrame: visible,
-            placement: .center
-        ))
-
-        XCTAssertEqual(left.frame, CGRect(x: 100, y: 20, width: 800, height: 900))
-        XCTAssertEqual(right.frame, CGRect(x: 500, y: 20, width: 800, height: 900))
-        XCTAssertEqual(center.frame, current)
-    }
-
-    func testStronglyConstrainedHalfSizeStillUsesCornerPlacement() throws {
-        let visible = CGRect(x: 0, y: 25, width: 1440, height: 875)
-        let constrained = CGRect(x: 250, y: 180, width: 850, height: 560)
-
-        let left = try XCTUnwrap(WindowGeometry.composedPlacementTarget(
-            currentFrame: constrained,
-            visibleFrame: visible,
-            placement: .leading
-        ))
-        let right = try XCTUnwrap(WindowGeometry.composedPlacementTarget(
-            currentFrame: constrained,
-            visibleFrame: visible,
-            placement: .trailing
-        ))
-
-        XCTAssertEqual(left.frame.origin, CGPoint(x: 0, y: 25))
-        XCTAssertEqual(right.frame.origin, CGPoint(x: 590, y: 25))
-    }
-
-    func testLargeArbitraryWindowIsNotTreatedAsFullSize() throws {
-        let visible = CGRect(x: 0, y: 25, width: 1440, height: 875)
-        let current = CGRect(x: 140, y: 110, width: 1240, height: 740)
-
-        let left = try XCTUnwrap(WindowGeometry.composedPlacementTarget(
-            currentFrame: current,
-            visibleFrame: visible,
-            placement: .leading
-        ))
-
-        XCTAssertEqual(left.frame.origin, CGPoint(x: 0, y: 93))
-    }
-
-    func testClearlyUnknownSizeStillUsesGenericPlacement() throws {
-        let visible = CGRect(x: 0, y: 25, width: 1440, height: 875)
-        let current = CGRect(x: 260, y: 180, width: 710, height: 700)
-
-        let left = try XCTUnwrap(WindowGeometry.composedPlacementTarget(
-            currentFrame: current,
-            visibleFrame: visible,
-            placement: .leading
-        ))
-
-        XCTAssertEqual(left.frame, CGRect(x: 0, y: 113, width: 710, height: 700))
-    }
-
-    func testUnknownSizePreservesSizeAndUsesGenericPlacement() throws {
+    func testOversizedWindowPreservesSizeAndRequestedCorner() {
         let visible = CGRect(x: 0, y: 20, width: 1200, height: 900)
-        let current = CGRect(x: 260, y: 180, width: 710, height: 620)
-
-        let left = try XCTUnwrap(WindowGeometry.composedPlacementTarget(
-            currentFrame: current,
-            visibleFrame: visible,
-            placement: .leading
-        ))
-        let right = try XCTUnwrap(WindowGeometry.composedPlacementTarget(
-            currentFrame: current,
-            visibleFrame: visible,
-            placement: .trailing
-        ))
-        let center = try XCTUnwrap(WindowGeometry.composedPlacementTarget(
-            currentFrame: current,
-            visibleFrame: visible,
-            placement: .center
-        ))
-
-        XCTAssertEqual(left.frame, CGRect(x: 0, y: 160, width: 710, height: 620))
-        XCTAssertEqual(right.frame, CGRect(x: 490, y: 160, width: 710, height: 620))
-        XCTAssertEqual(center.frame, CGRect(x: 245, y: 160, width: 710, height: 620))
+        let frame = WindowGeometry.composedPlacementTarget(
+            currentFrame: CGRect(x: 0, y: 0, width: 1400, height: 1000), visibleFrame: visible, placement: .lowerRight).frame
+        XCTAssertEqual(frame, CGRect(x: -200, y: -80, width: 1400, height: 1000))
     }
-}
 
+    func testCenterPreservesSizeIncludingFullWidthHalfHeight() {
+        let visible = CGRect(x: 100, y: 20, width: 1200, height: 900)
+        let frame = WindowGeometry.composedPlacementTarget(
+            currentFrame: CGRect(x: 0, y: 0, width: 1200, height: 450), visibleFrame: visible, placement: .center).frame
+        XCTAssertEqual(frame, CGRect(x: 100, y: 245, width: 1200, height: 450))
+    }
+
+    func testCompatiblePlacementRetainsExplicitAnchorWhenActualSizeDiffers() {
+        let visible = CGRect(x: 0, y: 0, width: 1200, height: 900)
+        let placement = WindowFramePlacement(composed: .lowerRight, visible: visible)
+        // A full-screen target has ambiguous geometric anchors. The selected
+        // lower-right anchor must survive an application's actual size limits.
+        XCTAssertEqual(placement.origin(for: visible.size), .zero)
+        XCTAssertEqual(placement.origin(for: CGSize(width: 800, height: 700)), CGPoint(x: 400, y: 200))
+        XCTAssertEqual(placement.origin(for: CGSize(width: 1300, height: 1000)), CGPoint(x: -100, y: -100))
+    }
+
+    func testEveryCornerUsesPositionOnlyForBothAdjustmentPolicies() throws {
+        let visible = CGRect(x: -1200, y: 20, width: 1200, height: 900)
+        for policy in [WindowAdjustmentPolicy.baseline, .compatible] {
+            for placement in corners {
+                var actual = CGRect(x: -900, y: 100, width: 713, height: 627)
+                let target = WindowGeometry.composedPlacementTarget(currentFrame: actual, visibleFrame: visible, placement: placement).frame
+                var clock = 0.0
+                let result = try WindowFrameAdjustment.run(
+                    target: target, read: { actual }, position: { actual.origin = $0 },
+                    size: { _ in XCTFail("Corner placement must preserve actual size") }, check: {},
+                    trace: WindowAdjustmentTrace(command: "corner", requestedAt: 0),
+                    policy: policy, initial: actual, allowsResize: false,
+                    placement: WindowFramePlacement(composed: placement, visible: visible),
+                    uptime: { clock }, wait: { clock += 0.012 }
+                )
+                XCTAssertEqual(result.outcome, .applied)
+                XCTAssertEqual(actual, target)
+            }
+        }
+    }
+
+    @MainActor
+    func testCornerKeysAndExistingCustomHLBindingsArePreserved() throws {
+        let suite = "ComposedCornerTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let customH = KeyboardShortcut(keyCode: UInt32(kVK_ANSI_M), carbonModifiers: UInt32(cmdKey | optionKey))
+        let customL = KeyboardShortcut(keyCode: UInt32(kVK_ANSI_N), carbonModifiers: UInt32(cmdKey | optionKey))
+        defaults.set(try JSONEncoder().encode(["leadingPlacement": customH, "trailingPlacement": customL]),
+                     forKey: "composedWindowControlShortcuts")
+        let settings = AppSettings(defaults: defaults)
+        XCTAssertEqual(settings.composedWindowControlShortcut(for: .lowerLeftPlacement), customH)
+        XCTAssertEqual(settings.composedWindowControlShortcut(for: .lowerRightPlacement), customL)
+        let keys: [(ComposedWindowControlID, Int)] = [(.upperLeftPlacement, kVK_ANSI_Y), (.lowerLeftPlacement, kVK_ANSI_H),
+                                                     (.upperRightPlacement, kVK_ANSI_O), (.lowerRightPlacement, kVK_ANSI_L)]
+        for (id, code) in keys {
+            XCTAssertEqual(ComposedWindowControlCatalog.defaultShortcuts[id]?.keyCode, UInt32(code))
+            XCTAssertEqual(ComposedWindowControlCatalog.defaultShortcuts[id]?.carbonModifiers, KeyboardShortcut.panelDefault.carbonModifiers)
+        }
+    }
+
+    private var corners: [ComposedWindowPlacement] { [.upperLeft, .lowerLeft, .upperRight, .lowerRight] }
+}
