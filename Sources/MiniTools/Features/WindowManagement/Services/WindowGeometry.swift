@@ -315,6 +315,20 @@ enum WindowGeometry {
         )
     }
 
+    /// A size command only chooses its initial placement when size must change.
+    /// Reuse the adjustment engine's 8pt rounding/constraint tolerance.
+    static func composedSizeTargetFrame(
+        currentFrame: CGRect,
+        size: ComposedWindowSizeTarget,
+        visibleFrame: CGRect
+    ) -> CGRect? {
+        let target = targetFrame(for: size.frame, in: visibleFrame)
+        guard correctedSizeAfterApplyingFrame(actualFrame: currentFrame, targetFrame: target) != nil else {
+            return nil
+        }
+        return target
+    }
+
     static func composedPlacementTarget(
         currentFrame: CGRect,
         visibleFrame: CGRect,

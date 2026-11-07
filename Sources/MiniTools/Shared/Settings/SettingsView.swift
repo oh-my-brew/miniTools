@@ -322,7 +322,7 @@ private struct SettingsCategoryDetail: View {
         } header: {
             Text("布局方案")
         } footer: {
-            Text("经典布局按区域直接调整；尺寸与位置方案先选择窗口大小，再用 Y/H/O/L 对齐四角，或用 Return 居中。")
+            Text("经典布局按区域直接调整；尺寸与位置方案先选择窗口大小，再用 U/J/I/K 对齐四角，或用 Return 居中；尺寸已符合目标时保持当前位置。")
         }
 
         if settings.windowManagementMode == .classic {
@@ -373,7 +373,7 @@ private struct SettingsCategoryDetail: View {
                 } label: {
                     settingsLabel(
                         title: "长按触发时间",
-                        subtitle: "用于 U、J、K 的长按尺寸动作"
+                        subtitle: "用于全宽、满高窄窗和半高窄窗的长按尺寸动作"
                     )
                 }
             }
