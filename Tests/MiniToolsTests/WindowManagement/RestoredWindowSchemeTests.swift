@@ -58,7 +58,7 @@ final class RestoredWindowSchemeTests: XCTestCase {
         for shortcut in ComposedWindowControlCatalog.defaultShortcuts.values {
             XCTAssertFalse(shared.contains(shortcut))
         }
-        XCTAssertEqual(ComposedWindowControlCatalog.defaultShortcuts[.fullOrHalfHeight]?.keyCode, UInt32(kVK_ANSI_U))
+        XCTAssertEqual(ComposedWindowControlCatalog.defaultShortcuts[.fullOrHalfHeight]?.keyCode, UInt32(kVK_ANSI_Backslash))
     }
 
     private func makeDefaults() throws -> (UserDefaults, String) {

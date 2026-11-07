@@ -71,33 +71,33 @@ enum ComposedWindowControlCatalog {
             .fullOrHalfHeight,
             "全宽",
             "短按：全屏 · 长按：上半屏",
-            kVK_ANSI_U,
+            kVK_ANSI_Backslash,
             supportsLongPress: true
         ),
         descriptor(
             .twoThirdsWidth,
             "三分之二宽",
-            "满高并居中",
-            kVK_ANSI_I
+            "满高；调整尺寸时居中",
+            kVK_ANSI_H
         ),
         descriptor(
             .halfOrThirdFullHeight,
             "满高窄窗",
             "短按：二分之一宽 · 长按：三分之一宽",
-            kVK_ANSI_J,
+            kVK_ANSI_L,
             supportsLongPress: true
         ),
         descriptor(
             .halfOrThirdHalfHeight,
             "半高窄窗",
             "短按：二分之一宽 · 长按：三分之一宽",
-            kVK_ANSI_K,
+            kVK_ANSI_O,
             supportsLongPress: true
         ),
-        descriptor(.upperLeftPlacement, "左上对齐", "保持尺寸，窗口左上角对齐屏幕左上角", kVK_ANSI_Y),
-        descriptor(.lowerLeftPlacement, "左下对齐", "保持尺寸，窗口左下角对齐屏幕左下角", kVK_ANSI_H),
-        descriptor(.upperRightPlacement, "右上对齐", "保持尺寸，窗口右上角对齐屏幕右上角", kVK_ANSI_O),
-        descriptor(.lowerRightPlacement, "右下对齐", "保持尺寸，窗口右下角对齐屏幕右下角", kVK_ANSI_L),
+        descriptor(.upperLeftPlacement, "左上对齐", "保持尺寸，窗口左上角对齐屏幕左上角", kVK_ANSI_U),
+        descriptor(.lowerLeftPlacement, "左下对齐", "保持尺寸，窗口左下角对齐屏幕左下角", kVK_ANSI_J),
+        descriptor(.upperRightPlacement, "右上对齐", "保持尺寸，窗口右上角对齐屏幕右上角", kVK_ANSI_I),
+        descriptor(.lowerRightPlacement, "右下对齐", "保持尺寸，窗口右下角对齐屏幕右下角", kVK_ANSI_K),
         descriptor(
             .centerPlacement,
             "窗口居中",
