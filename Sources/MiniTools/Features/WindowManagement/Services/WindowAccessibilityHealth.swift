@@ -36,8 +36,9 @@ enum WindowTargetResolver {
 enum WindowServerWindowInspector {
     /// Associate by bounds once, only when unambiguous. Never reselect a
     /// different window from the same process during convergence.
-    static func matchingWindowID(processIdentifier: pid_t, accessibilityFrame: CGRect) -> CGWindowID? {
-        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
+    static func matchingWindowID(processIdentifier: pid_t, accessibilityFrame: CGRect,
+                                 diagnostic: ((String, CGRect?) -> Void)? = nil) -> CGWindowID? {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { diagnostic?("windowServerListUnavailable", nil); return nil }
         let candidates: [(id: CGWindowID, frame: CGRect)] = windows.compactMap { window in
             guard let owner = window[kCGWindowOwnerPID as String] as? NSNumber,
                   owner.int32Value == processIdentifier,
@@ -50,13 +51,18 @@ enum WindowServerWindowInspector {
             else { return nil }
             return (number.uint32Value, frame)
         }
+        for candidate in candidates.prefix(8) {
+            diagnostic?("windowServerCandidate_\(candidate.id)", candidate.frame)
+        }
         let matches = candidates.filter {
             WindowGeometry.framesAreClose($0.frame, accessibilityFrame, tolerance: 12)
         }
-        if matches.count == 1 { return matches[0].id }
+        if matches.count == 1 { diagnostic?("windowServerMatchedBounds", nil); return matches[0].id }
         // AX can report the previous request instead of the actual constrained
         // size. A sole visible window is still an unambiguous association.
-        return candidates.count == 1 ? candidates[0].id : nil
+        if candidates.count == 1 { diagnostic?("windowServerSoleCandidate", nil); return candidates[0].id }
+        diagnostic?(candidates.isEmpty ? "windowServerNoCandidate" : "windowServerAmbiguous", nil)
+        return nil
     }
 
     static func frame(windowID: CGWindowID, processIdentifier: pid_t) -> CGRect? {
