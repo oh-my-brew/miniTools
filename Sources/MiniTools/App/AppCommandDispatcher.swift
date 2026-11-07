@@ -25,7 +25,8 @@ final class AppCommandDispatcher {
         case let .windowControl(control):
             windowControlController.perform(
                 control,
-                cursorHighlightStyles: settings.cursorHighlightStyles
+                cursorHighlightStyles: settings.cursorHighlightStyles,
+                crossScreenPreservesLayout: settings.crossScreenPreservesLayout
             )
         }
     }
