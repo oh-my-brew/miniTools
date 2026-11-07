@@ -19,9 +19,11 @@ struct WindowFramePlacement {
     let horizontal: Anchor
     let vertical: Anchor
     let visible: CGRect
+    private let relativePosition: CGPoint?
 
     init(target: CGRect, visible: CGRect) {
         self.visible = visible
+        relativePosition = nil
         func anchor(_ start: CGFloat, _ end: CGFloat, _ low: CGFloat, _ high: CGFloat) -> Anchor {
             if abs(start - low) <= 1, abs(end - high) <= 1 { return .center }
             if abs(start - low) <= 1 { return .leading }
@@ -32,7 +34,22 @@ struct WindowFramePlacement {
         vertical = anchor(target.minY, target.maxY, visible.minY, visible.maxY)
     }
 
+    /// Keep a free-form cross-screen target's relative position if size is constrained.
+    init(relativeTarget target: CGRect, visible: CGRect) {
+        self.visible = visible
+        horizontal = .center
+        vertical = .center
+        relativePosition = CGPoint(
+            x: visible.width > target.width ? min(1, max(0, (target.minX - visible.minX) / (visible.width - target.width))) : 0.5,
+            y: visible.height > target.height ? min(1, max(0, (target.minY - visible.minY) / (visible.height - target.height))) : 0.5
+        )
+    }
+
     func origin(for size: CGSize) -> CGPoint {
+        if let relativePosition {
+            return CGPoint(x: visible.minX + relativePosition.x * max(0, visible.width - size.width),
+                           y: visible.minY + relativePosition.y * max(0, visible.height - size.height))
+        }
         func coordinate(_ anchor: Anchor, _ extent: CGFloat, _ low: CGFloat, _ high: CGFloat) -> CGFloat {
             let proposed: CGFloat
             switch anchor {

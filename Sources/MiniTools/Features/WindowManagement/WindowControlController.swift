@@ -12,7 +12,8 @@ final class WindowControlController {
 
     func perform(
         _ id: WindowControlID,
-        cursorHighlightStyles: Set<CursorHighlightStyle>
+        cursorHighlightStyles: Set<CursorHighlightStyle>,
+        crossScreenPreservesLayout: Bool = false
     ) {
         if let command = WindowControlCatalog.layoutCommand(for: id) {
             performWindowAction(id: id) {
@@ -24,7 +25,7 @@ final class WindowControlController {
         switch id {
         case .moveWindowToNextScreen:
             performWindowAction(id: id) {
-                try await WindowLayoutService.moveFocusedWindowToNextScreen()
+                try await WindowLayoutService.moveFocusedWindowToNextScreen(preservingLayout: crossScreenPreservesLayout)
             }
         case .movePointerToNextScreen:
             movePointerToNextScreen(cursorHighlightStyles: cursorHighlightStyles)

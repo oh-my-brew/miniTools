@@ -9,6 +9,7 @@ final class AppSettings: ObservableObject {
         static let clipboardHistoryRetention = "clipboardHistoryRetention"
         static let lastFeaturePanel = "lastFeaturePanel"
         static let windowControlShortcuts = "windowControlShortcuts"
+        static let crossScreenPreservesLayout = "crossScreenPreservesLayout"
         static let compressionQuality = "compressionQuality"
         static let cursorHighlightStyles = "cursorHighlightStyles"
         static let mouseBindings = "mouseBindings"
@@ -33,6 +34,7 @@ final class AppSettings: ObservableObject {
     @Published private(set) var clipboardHistoryRetention: ClipboardHistoryRetention
     @Published private(set) var lastFeaturePanel: FeaturePanelKind
     @Published private(set) var windowControlShortcuts: [WindowControlID: KeyboardShortcut]
+    @Published private(set) var crossScreenPreservesLayout: Bool
     @Published private(set) var cursorHighlightStyles: Set<CursorHighlightStyle>
     @Published private(set) var mouseBindings: [MouseBindingKey: AppCommand]
     @Published private(set) var mouseDragThresholdRatio: Double
@@ -62,6 +64,7 @@ final class AppSettings: ObservableObject {
         lastFeaturePanel = defaults.string(forKey: Keys.lastFeaturePanel)
             .flatMap(FeaturePanelKind.init(rawValue:)) ?? .encodingConversion
         windowControlShortcuts = Self.loadWindowControlShortcuts(defaults: defaults)
+        crossScreenPreservesLayout = defaults.bool(forKey: Keys.crossScreenPreservesLayout)
         var loadedCursorHighlightStyles = Self.loadCursorHighlightStyles(defaults: defaults)
         if !defaults.bool(forKey: Keys.restoredHikariCursorStyle) {
             loadedCursorHighlightStyles.insert(.mangekyoHikari)
@@ -156,6 +159,12 @@ final class AppSettings: ObservableObject {
         guard normalized != mouseDragThresholdRatio else { return }
         mouseDragThresholdRatio = normalized
         defaults.set(normalized, forKey: Keys.mouseDragThresholdRatio)
+    }
+
+    func updateCrossScreenPreservesLayout(_ enabled: Bool) {
+        guard enabled != crossScreenPreservesLayout else { return }
+        crossScreenPreservesLayout = enabled
+        defaults.set(enabled, forKey: Keys.crossScreenPreservesLayout)
     }
 
     func updateClosedLidRunningEnabled(_ enabled: Bool) {

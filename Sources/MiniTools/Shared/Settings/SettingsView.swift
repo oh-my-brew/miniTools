@@ -305,6 +305,13 @@ private struct SettingsCategoryDetail: View {
         }
 
         Section {
+            Toggle("跨屏时保持窗口布局比例", isOn: Binding(
+                get: { settings.crossScreenPreservesLayout },
+                set: { settings.updateCrossScreenPreservesLayout($0) }
+            ))
+            Text("开启后，窗口按目标屏幕的可用区域同比例调整位置和大小，例如上半屏跨屏后仍为上半屏。关闭时尽量保留原尺寸，超出目标屏幕时缩小。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             ForEach(WindowControlCatalog.crossScreenDescriptors) { descriptor in
                 windowControlRow(descriptor)
             }
