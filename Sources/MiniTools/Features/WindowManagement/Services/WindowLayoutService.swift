@@ -6,6 +6,15 @@ import Foundation
 struct WindowActionOutcome: Equatable, Sendable {
     let candidateIndex: Int
     let didReachTarget: Bool
+    let statisticsID: String?
+    let title: String?
+
+    init(candidateIndex: Int, didReachTarget: Bool, statisticsID: String? = nil, title: String? = nil) {
+        self.candidateIndex = candidateIndex
+        self.didReachTarget = didReachTarget
+        self.statisticsID = statisticsID
+        self.title = title
+    }
 }
 
 enum WindowLayoutError: LocalizedError {
@@ -55,11 +64,16 @@ enum WindowLayoutService {
         case center
         case nextScreen(preservingLayout: Bool)
 
-        var id: WindowControlID {
+        case composedSize(ComposedWindowSizeTarget)
+        case composedPlacement(ComposedWindowPlacement)
+
+        var id: String {
             switch self {
-            case .layout(let command): command.id
-            case .center: .centerWindow
-            case .nextScreen: .moveWindowToNextScreen
+            case .layout(let command): command.id.rawValue
+            case .center: WindowControlID.centerWindow.rawValue
+            case .nextScreen: WindowControlID.moveWindowToNextScreen.rawValue
+            case .composedSize(let target): "composed.\(target.statisticsID)"
+            case .composedPlacement(let placement): "composed.position.\(placement)"
             }
         }
     }
@@ -99,7 +113,7 @@ enum WindowLayoutService {
         // All AX elements and intent state are confined to queue.
         struct Intent {
             let window: AXUIElement
-            let command: WindowControlID
+            let command: String
             let target: CGRect
             let visible: CGRect
             let processID: pid_t
@@ -146,7 +160,7 @@ enum WindowLayoutService {
             assistiveTechnologyEnabled: Bool,
             compatibleApplications: Set<String>
         ) throws -> WindowActionOutcome {
-            let trace = WindowAdjustmentTrace(command: action.id.rawValue, requestedAt: requestedAt)
+            let trace = WindowAdjustmentTrace(command: action.id, requestedAt: requestedAt)
             var lastFrame: CGRect?
             defer {
                 // Only a superseded pending intention can drive the next cycle.
@@ -158,7 +172,7 @@ enum WindowLayoutService {
                 // writes are superseded, without re-querying AX for every queued press.
                 if !gate.isCurrent(ticket), let pending = intent,
                    pending.processID == frontmost,
-                   case .layout(let command) = action, command.id == pending.command {
+                   case .layout(let command) = action, command.id.rawValue == pending.command {
                     let targets = command.frames.map { WindowGeometry.targetFrame(for: $0, in: pending.visible) }
                     if let next = WindowGeometry.nextTarget(currentFrame: pending.target, candidates: targets) {
                         intent = Intent(window: pending.window, command: pending.command, target: next,
@@ -167,6 +181,18 @@ enum WindowLayoutService {
                         trace.event("coalescedPendingIntent")
                         throw CancellationError()
                     }
+                }
+                if !gate.isCurrent(ticket), let pending = intent,
+                   pending.processID == frontmost,
+                   case .composedPlacement(let placement) = action,
+                   let positioned = WindowGeometry.composedPlacementTarget(
+                       currentFrame: pending.target, visibleFrame: pending.visible, placement: placement
+                   ) {
+                    intent = Intent(window: pending.window, command: action.id, target: positioned.frame,
+                                    visible: pending.visible, processID: pending.processID)
+                    trace.plan(initial: pending.target, target: positioned.frame, visible: pending.visible)
+                    trace.event("coalescedPendingPlacement")
+                    throw CancellationError()
                 }
                 trace.event("resolveApplication")
                 let application = try activeApplication(frontmostProcessIdentifier: frontmost)
@@ -208,6 +234,9 @@ enum WindowLayoutService {
                 var target: CGRect
                 var candidateIndex = 0
                 var destination = visible
+                var allowsResize = true
+                var statisticsID: String?
+                var title: String?
                 switch action {
                 case .layout(let command):
                     let targets = command.frames.map { WindowGeometry.targetFrame(for: $0, in: visible) }
@@ -223,6 +252,33 @@ enum WindowLayoutService {
                     }
                     target = next
                     candidateIndex = targets.firstIndex(of: next) ?? 0
+                case .composedSize(let size):
+                    target = WindowGeometry.targetFrame(for: size.frame, in: visible)
+                    statisticsID = size.statisticsID
+                    title = size.title
+                case .composedPlacement(let placement):
+                    // A fast H/L after a still-pending size command completes that
+                    // intended size; otherwise placement never writes AXSize.
+                    let placementFrame: CGRect
+                    if let intent, CFEqual(intent.window, window), intent.visible == visible,
+                       intent.processID == application.processIdentifier {
+                        placementFrame = intent.target
+                        allowsResize = intent.target.size != current.size
+                    } else {
+                        placementFrame = current
+                        allowsResize = false
+                    }
+                    guard let positioned = WindowGeometry.composedPlacementTarget(
+                        currentFrame: placementFrame, visibleFrame: visible, placement: placement
+                    ) else {
+                        try gate.check(ticket)
+                        trace.plan(initial: current, target: current, visible: visible)
+                        trace.finish("notApplicable", frame: current)
+                        return WindowActionOutcome(candidateIndex: 0, didReachTarget: false)
+                    }
+                    target = positioned.frame
+                    statisticsID = positioned.statisticsID
+                    title = positioned.title
                 case .center:
                     target = WindowGeometry.centeredFrame(current, in: visible)
                 case .nextScreen(let preservingLayout):
@@ -258,7 +314,7 @@ enum WindowLayoutService {
                             try gate.check(ticket)
                         },
                         check: { try gate.check(ticket) }, trace: trace,
-                        policy: policy, initial: current,
+                        policy: policy, initial: current, allowsResize: allowsResize,
                         placement: {
                             if case .nextScreen(let preservingLayout) = action {
                                 return preservingLayout ? WindowFramePlacement(relativeTarget: target, visible: destination) : nil
@@ -290,7 +346,8 @@ enum WindowLayoutService {
                     requestedAt: requestedAt, record: trace.snapshot(),
                     readAccessibility: policy == .compatible || windowID == nil))
                 return WindowActionOutcome(candidateIndex: candidateIndex,
-                                           didReachTarget: result.outcome == .applied)
+                                           didReachTarget: result.outcome == .applied,
+                                           statisticsID: statisticsID, title: title)
             } catch is CancellationError {
                 trace.finish("superseded", frame: lastFrame)
                 throw CancellationError()
@@ -319,9 +376,31 @@ enum WindowLayoutService {
     private static let worker = Worker()
 
     @MainActor
+    static func cancelPendingAdjustments() {
+        _ = gate.issue()
+        worker.queue.async { worker.intent = nil }
+    }
+
+    @MainActor
     static func applyLayout(_ command: WindowLayoutCommand,
                             compatibleApplications: Set<String> = WindowAdjustmentPolicy.defaultBundleIdentifiers) async throws -> WindowActionOutcome {
         try await submit(.layout(command), compatibleApplications: compatibleApplications)
+    }
+
+    @MainActor
+    static func applyComposedSize(
+        _ target: ComposedWindowSizeTarget,
+        compatibleApplications: Set<String> = WindowAdjustmentPolicy.defaultBundleIdentifiers
+    ) async throws -> WindowActionOutcome {
+        try await submit(.composedSize(target), compatibleApplications: compatibleApplications)
+    }
+
+    @MainActor
+    static func applyComposedPlacement(
+        _ placement: ComposedWindowPlacement,
+        compatibleApplications: Set<String> = WindowAdjustmentPolicy.defaultBundleIdentifiers
+    ) async throws -> WindowActionOutcome {
+        try await submit(.composedPlacement(placement), compatibleApplications: compatibleApplications)
     }
 
     @MainActor

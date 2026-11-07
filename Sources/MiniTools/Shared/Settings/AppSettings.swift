@@ -8,6 +8,10 @@ final class AppSettings: ObservableObject {
         static let clipboardHistoryEnabled = "clipboardHistoryEnabled"
         static let clipboardHistoryRetention = "clipboardHistoryRetention"
         static let lastFeaturePanel = "lastFeaturePanel"
+        // Fresh opt-in: do not revive the removed scheme's old selected mode.
+        static let windowManagementMode = "windowManagementModeV2"
+        static let composedWindowControlShortcuts = "composedWindowControlShortcuts"
+        static let windowLongPressThresholdMilliseconds = "windowLongPressThresholdMilliseconds"
         static let windowControlShortcuts = "windowControlShortcuts"
         static let windowCompatibilityApplications = "windowCompatibilityApplications"
         static let crossScreenPreservesLayout = "crossScreenPreservesLayout"
@@ -34,6 +38,9 @@ final class AppSettings: ObservableObject {
     @Published private(set) var clipboardHistoryEnabled: Bool
     @Published private(set) var clipboardHistoryRetention: ClipboardHistoryRetention
     @Published private(set) var lastFeaturePanel: FeaturePanelKind
+    @Published private(set) var windowManagementMode: WindowManagementMode
+    @Published private(set) var composedWindowControlShortcuts: [ComposedWindowControlID: KeyboardShortcut]
+    @Published private(set) var windowLongPressThresholdMilliseconds: Int
     @Published private(set) var windowControlShortcuts: [WindowControlID: KeyboardShortcut]
     @Published private(set) var windowCompatibilityApplications: Set<String>
     @Published private(set) var crossScreenPreservesLayout: Bool
@@ -72,6 +79,14 @@ final class AppSettings: ObservableObject {
             .map { Set($0.filter(WindowCompatibilityApplication.isValidBundleIdentifier)) }
             ?? WindowAdjustmentPolicy.defaultBundleIdentifiers
         crossScreenPreservesLayout = defaults.bool(forKey: Keys.crossScreenPreservesLayout)
+        windowManagementMode = defaults.string(forKey: Keys.windowManagementMode)
+            .flatMap(WindowManagementMode.init(rawValue:)) ?? .classic
+        composedWindowControlShortcuts = Self.loadComposedWindowControlShortcuts(
+            defaults: defaults
+        )
+        windowLongPressThresholdMilliseconds = Self.loadWindowLongPressThresholdMilliseconds(
+            defaults: defaults
+        )
         var loadedCursorHighlightStyles = Self.loadCursorHighlightStyles(defaults: defaults)
         if !defaults.bool(forKey: Keys.restoredHikariCursorStyle) {
             loadedCursorHighlightStyles.insert(.mangekyoHikari)
@@ -239,6 +254,73 @@ final class AppSettings: ObservableObject {
         )
         guard let data = try? JSONEncoder().encode(encoded) else { return }
         defaults.set(data, forKey: Keys.windowControlShortcuts)
+    }
+
+    func updateWindowManagementMode(_ mode: WindowManagementMode) {
+        guard mode != windowManagementMode else { return }
+        windowManagementMode = mode
+        defaults.set(mode.rawValue, forKey: Keys.windowManagementMode)
+    }
+
+    func updateComposedWindowControlShortcut(
+        _ shortcut: KeyboardShortcut,
+        for id: ComposedWindowControlID
+    ) {
+        composedWindowControlShortcuts[id] = shortcut
+        saveComposedWindowControlShortcuts()
+    }
+
+    func composedWindowControlShortcut(
+        for id: ComposedWindowControlID
+    ) -> KeyboardShortcut {
+        composedWindowControlShortcuts[id]
+            ?? ComposedWindowControlCatalog.defaultShortcuts[id]
+            ?? .panelDefault
+    }
+
+    func updateWindowLongPressThresholdMilliseconds(_ milliseconds: Int) {
+        let normalized = HotKeyLongPressRecognizer.normalizedThresholdMilliseconds(milliseconds)
+        guard normalized != windowLongPressThresholdMilliseconds else { return }
+        windowLongPressThresholdMilliseconds = normalized
+        defaults.set(normalized, forKey: Keys.windowLongPressThresholdMilliseconds)
+    }
+
+    private func saveComposedWindowControlShortcuts() {
+        let encoded = Dictionary(
+            uniqueKeysWithValues: composedWindowControlShortcuts.map {
+                ($0.key.rawValue, $0.value)
+            }
+        )
+        guard let data = try? JSONEncoder().encode(encoded) else { return }
+        defaults.set(data, forKey: Keys.composedWindowControlShortcuts)
+    }
+
+    private static func loadComposedWindowControlShortcuts(
+        defaults: UserDefaults
+    ) -> [ComposedWindowControlID: KeyboardShortcut] {
+        var shortcuts = ComposedWindowControlCatalog.defaultShortcuts
+        guard
+            let data = defaults.data(forKey: Keys.composedWindowControlShortcuts),
+            let stored = try? JSONDecoder().decode([String: KeyboardShortcut].self, from: data)
+        else {
+            return shortcuts
+        }
+        for (rawID, shortcut) in stored {
+            guard let id = ComposedWindowControlID(rawValue: rawID) else { continue }
+            shortcuts[id] = shortcut
+        }
+        return shortcuts
+    }
+
+    private static func loadWindowLongPressThresholdMilliseconds(
+        defaults: UserDefaults
+    ) -> Int {
+        guard defaults.object(forKey: Keys.windowLongPressThresholdMilliseconds) != nil else {
+            return HotKeyLongPressRecognizer.defaultThresholdMilliseconds
+        }
+        return HotKeyLongPressRecognizer.normalizedThresholdMilliseconds(
+            defaults.integer(forKey: Keys.windowLongPressThresholdMilliseconds)
+        )
     }
 
     private static func loadPanelShortcut(defaults: UserDefaults) -> KeyboardShortcut {

@@ -41,6 +41,34 @@ final class WindowControlController {
         }
     }
 
+    func performComposed(
+        _ id: ComposedWindowControlID,
+        press: WindowShortcutPress,
+        compatibleApplications: Set<String>
+    ) {
+        Task { [weak self] in
+            do {
+                let outcome: WindowActionOutcome
+                if let target = ComposedWindowControlCatalog.sizeTarget(for: id, press: press) {
+                    outcome = try await WindowLayoutService.applyComposedSize(
+                        target, compatibleApplications: compatibleApplications
+                    )
+                } else if let placement = ComposedWindowControlCatalog.placement(for: id) {
+                    outcome = try await WindowLayoutService.applyComposedPlacement(
+                        placement, compatibleApplications: compatibleApplications
+                    )
+                } else { return }
+                guard let self, outcome.didReachTarget,
+                      let statisticsID = outcome.statisticsID, let title = outcome.title else { return }
+                usageStatistics.record(id: "composed.\(statisticsID)", title: title, category: .windowManagement)
+            } catch is CancellationError {
+                // Superseded operations must not display failure feedback.
+            } catch {
+                self?.report(error)
+            }
+        }
+    }
+
     private func movePointerToNextScreen(
         cursorHighlightStyles: Set<CursorHighlightStyle>
     ) {
