@@ -12,6 +12,7 @@ final class AppSettings: ObservableObject {
         // Fresh opt-in: do not revive the removed scheme's old selected mode.
         static let windowManagementMode = "windowManagementModeV2"
         static let composedWindowControlShortcuts = "composedWindowControlShortcuts"
+        static let composedCornerResizeDefaultsMigrated = "composedCornerResizeDefaultsMigrated"
         static let composedScreenshotDefaultsMigrated = "composedScreenshotDefaultsMigrated"
         static let windowLongPressThresholdMilliseconds = "windowLongPressThresholdMilliseconds"
         static let windowControlShortcuts = "windowControlShortcuts"
@@ -308,27 +309,49 @@ final class AppSettings: ObservableObject {
             guard let id = ComposedWindowControlID(rawValue: rawID) else { continue }
             shortcuts[id] = shortcut
         }
-        if !defaults.bool(forKey: Keys.composedScreenshotDefaultsMigrated) {
-            let oldKeys: [ComposedWindowControlID: Int] = [
-                .fullOrHalfHeight: kVK_ANSI_U, .twoThirdsWidth: kVK_ANSI_I,
-                .halfOrThirdFullHeight: kVK_ANSI_J, .halfOrThirdHalfHeight: kVK_ANSI_K,
-                .upperLeftPlacement: kVK_ANSI_Y, .lowerLeftPlacement: kVK_ANSI_H,
-                .upperRightPlacement: kVK_ANSI_O, .lowerRightPlacement: kVK_ANSI_L
-            ]
-            // Compare all saved values against the previous layout, not against
-            // keys already changed in this migration. Custom bindings survive.
-            for (id, code) in oldKeys {
+        // Freeze each historical layout so users skipping a release migrate
+        // through the same stages. Match saved defaults only, never custom keys.
+        let previousKeys: [ComposedWindowControlID: Int] = [
+            .fullOrHalfHeight: kVK_ANSI_Backslash, .twoThirdsWidth: kVK_ANSI_H,
+            .halfOrThirdFullHeight: kVK_ANSI_L, .halfOrThirdHalfHeight: kVK_ANSI_O,
+            .upperLeftPlacement: kVK_ANSI_U, .lowerLeftPlacement: kVK_ANSI_J,
+            .upperRightPlacement: kVK_ANSI_I, .lowerRightPlacement: kVK_ANSI_K
+        ]
+        var saved = stored ?? [:]
+        func migrate(_ keys: [ComposedWindowControlID: Int], to destination: [ComposedWindowControlID: KeyboardShortcut],
+                     marker: String) {
+            guard !defaults.bool(forKey: marker) else { return }
+            for (id, code) in keys {
                 let oldDefault = KeyboardShortcut(keyCode: UInt32(code),
                     carbonModifiers: KeyboardShortcut.panelDefault.carbonModifiers)
-                if stored?[id.rawValue] == oldDefault {
-                    shortcuts[id] = ComposedWindowControlCatalog.defaultShortcuts[id]
+                if saved[id.rawValue] == oldDefault {
+                    shortcuts[id] = destination[id]
                 }
             }
             let raw = Dictionary(uniqueKeysWithValues: shortcuts.map { ($0.key.rawValue, $0.value) })
             if let data = try? JSONEncoder().encode(raw) {
                 defaults.set(data, forKey: Keys.composedWindowControlShortcuts)
-                defaults.set(true, forKey: Keys.composedScreenshotDefaultsMigrated)
+                defaults.set(true, forKey: marker)
+                saved = raw
             }
+        }
+        // Fresh installations must not pass new defaults through old stages.
+        if stored != nil {
+            let originalKeys: [ComposedWindowControlID: Int] = [
+                .fullOrHalfHeight: kVK_ANSI_U, .twoThirdsWidth: kVK_ANSI_I,
+                .halfOrThirdFullHeight: kVK_ANSI_J, .halfOrThirdHalfHeight: kVK_ANSI_K,
+                .upperLeftPlacement: kVK_ANSI_Y, .lowerLeftPlacement: kVK_ANSI_H,
+                .upperRightPlacement: kVK_ANSI_O, .lowerRightPlacement: kVK_ANSI_L
+            ]
+            let previous = previousKeys.mapValues {
+                KeyboardShortcut(keyCode: UInt32($0), carbonModifiers: KeyboardShortcut.panelDefault.carbonModifiers)
+            }
+            migrate(originalKeys, to: previous, marker: Keys.composedScreenshotDefaultsMigrated)
+            migrate(previousKeys, to: ComposedWindowControlCatalog.defaultShortcuts,
+                    marker: Keys.composedCornerResizeDefaultsMigrated)
+        } else {
+            defaults.set(true, forKey: Keys.composedScreenshotDefaultsMigrated)
+            defaults.set(true, forKey: Keys.composedCornerResizeDefaultsMigrated)
         }
         return shortcuts
     }

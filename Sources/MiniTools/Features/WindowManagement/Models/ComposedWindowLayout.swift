@@ -35,7 +35,7 @@ enum WindowShortcutPress: Sendable {
     case long
 }
 
-enum ComposedWindowPlacement: Sendable {
+enum ComposedWindowPlacement: Equatable, Sendable {
     case upperLeft
     case lowerLeft
     case upperRight
@@ -70,34 +70,34 @@ enum ComposedWindowControlCatalog {
         descriptor(
             .fullOrHalfHeight,
             "全宽",
-            "短按：全屏 · 长按：上半屏",
+            "短按：全宽满高 · 长按：全宽半高",
             kVK_ANSI_Backslash,
             supportsLongPress: true
         ),
         descriptor(
             .twoThirdsWidth,
             "三分之二宽",
-            "满高；调整尺寸时居中",
-            kVK_ANSI_H
+            "满高；保持已贴边的角，否则居中",
+            kVK_ANSI_I
         ),
         descriptor(
             .halfOrThirdFullHeight,
             "满高窄窗",
             "短按：二分之一宽 · 长按：三分之一宽",
-            kVK_ANSI_L,
+            kVK_ANSI_J,
             supportsLongPress: true
         ),
         descriptor(
             .halfOrThirdHalfHeight,
             "半高窄窗",
             "短按：二分之一宽 · 长按：三分之一宽",
-            kVK_ANSI_O,
+            kVK_ANSI_K,
             supportsLongPress: true
         ),
         descriptor(.upperLeftPlacement, "左上对齐", "保持尺寸，窗口左上角对齐屏幕左上角", kVK_ANSI_U),
-        descriptor(.lowerLeftPlacement, "左下对齐", "保持尺寸，窗口左下角对齐屏幕左下角", kVK_ANSI_J),
-        descriptor(.upperRightPlacement, "右上对齐", "保持尺寸，窗口右上角对齐屏幕右上角", kVK_ANSI_I),
-        descriptor(.lowerRightPlacement, "右下对齐", "保持尺寸，窗口右下角对齐屏幕右下角", kVK_ANSI_K),
+        descriptor(.lowerLeftPlacement, "左下对齐", "保持尺寸，窗口左下角对齐屏幕左下角", kVK_ANSI_H),
+        descriptor(.upperRightPlacement, "右上对齐", "保持尺寸，窗口右上角对齐屏幕右上角", kVK_ANSI_O),
+        descriptor(.lowerRightPlacement, "右下对齐", "保持尺寸，窗口右下角对齐屏幕右下角", kVK_ANSI_L),
         descriptor(
             .centerPlacement,
             "窗口居中",
@@ -144,37 +144,37 @@ enum ComposedWindowControlCatalog {
             ComposedWindowSizeTarget(
                 frame: UnitWindowFrame(0, 0, 1, 0.5),
                 statisticsID: "size.fullWidthHalfHeight",
-                title: "全宽半高 · 上半屏"
+                title: "全宽半高"
             )
         case (.twoThirdsWidth, _):
             ComposedWindowSizeTarget(
                 frame: UnitWindowFrame(1.0 / 6.0, 0, 2.0 / 3.0, 1),
                 statisticsID: "size.twoThirdsFullHeight",
-                title: "三分之二宽 · 满高居中"
+                title: "三分之二宽 · 满高"
             )
         case (.halfOrThirdFullHeight, .short):
             ComposedWindowSizeTarget(
                 frame: UnitWindowFrame(0.25, 0, 0.5, 1),
                 statisticsID: "size.halfFullHeight",
-                title: "二分之一宽 · 满高居中"
+                title: "二分之一宽 · 满高"
             )
         case (.halfOrThirdFullHeight, .long):
             ComposedWindowSizeTarget(
                 frame: UnitWindowFrame(1.0 / 3.0, 0, 1.0 / 3.0, 1),
                 statisticsID: "size.thirdFullHeight",
-                title: "三分之一宽 · 满高居中"
+                title: "三分之一宽 · 满高"
             )
         case (.halfOrThirdHalfHeight, .short):
             ComposedWindowSizeTarget(
                 frame: UnitWindowFrame(0.25, 0.25, 0.5, 0.5),
                 statisticsID: "size.halfHalfHeight",
-                title: "二分之一宽 · 半高居中"
+                title: "二分之一宽 · 半高"
             )
         case (.halfOrThirdHalfHeight, .long):
             ComposedWindowSizeTarget(
                 frame: UnitWindowFrame(1.0 / 3.0, 0.25, 1.0 / 3.0, 0.5),
                 statisticsID: "size.thirdHalfHeight",
-                title: "三分之一宽 · 半高居中"
+                title: "三分之一宽 · 半高"
             )
         default:
             nil

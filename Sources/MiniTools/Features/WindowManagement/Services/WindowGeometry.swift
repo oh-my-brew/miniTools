@@ -315,8 +315,28 @@ enum WindowGeometry {
         )
     }
 
-    /// A size command only chooses its initial placement when size must change.
-    /// Reuse the adjustment engine's 8pt rounding/constraint tolerance.
+    /// Compare corresponding corners in AX (top-left origin) coordinates.
+    /// Both axes must match; a single touching edge does not select a corner.
+    static func composedResizeAnchor(currentFrame: CGRect, visibleFrame: CGRect,
+                                     tolerance: CGFloat = 8) -> ComposedWindowPlacement {
+        let left = abs(currentFrame.minX - visibleFrame.minX) <= tolerance
+        let right = abs(currentFrame.maxX - visibleFrame.maxX) <= tolerance
+        let top = abs(currentFrame.minY - visibleFrame.minY) <= tolerance
+        let bottom = abs(currentFrame.maxY - visibleFrame.maxY) <= tolerance
+        if left && top { return .upperLeft }
+        if left && bottom { return .lowerLeft }
+        if right && top { return .upperRight }
+        if right && bottom { return .lowerRight }
+        return .center
+    }
+
+    static func composedSizePlacement(currentFrame: CGRect, visibleFrame: CGRect) -> WindowFramePlacement {
+        WindowFramePlacement(resizing: composedResizeAnchor(currentFrame: currentFrame, visibleFrame: visibleFrame),
+                             currentFrame: currentFrame, visible: visibleFrame)
+    }
+
+    /// Same-size commands leave both position and size alone. Otherwise keep
+    /// the first matching corner, or center if no corner is within 8pt.
     static func composedSizeTargetFrame(
         currentFrame: CGRect,
         size: ComposedWindowSizeTarget,
@@ -326,7 +346,8 @@ enum WindowGeometry {
         guard correctedSizeAfterApplyingFrame(actualFrame: currentFrame, targetFrame: target) != nil else {
             return nil
         }
-        return target
+        let placement = composedSizePlacement(currentFrame: currentFrame, visibleFrame: visibleFrame)
+        return CGRect(origin: placement.origin(for: target.size), size: target.size)
     }
 
     static func composedPlacementTarget(
