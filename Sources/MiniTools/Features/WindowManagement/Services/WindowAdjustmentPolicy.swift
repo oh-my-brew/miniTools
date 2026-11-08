@@ -24,6 +24,7 @@ struct WindowFramePlacement {
     let visible: CGRect
     private let relativePosition: CGPoint?
     private let clampsToVisible: Bool
+    private var roundsCoordinates = true
 
     init(target: CGRect, visible: CGRect) {
         self.visible = visible
@@ -66,6 +67,13 @@ struct WindowFramePlacement {
         }
     }
 
+    /// Resize around the actual matching window corner, including its small
+    /// offset from the screen. Centering uses the usable screen rectangle.
+    init(resizing placement: ComposedWindowPlacement, currentFrame: CGRect, visible: CGRect) {
+        self.init(composed: placement, visible: placement == .center ? visible : currentFrame)
+        roundsCoordinates = placement == .center
+    }
+
     func origin(for size: CGSize) -> CGPoint {
         if let relativePosition {
             return CGPoint(x: visible.minX + relativePosition.x * max(0, visible.width - size.width),
@@ -78,7 +86,7 @@ struct WindowFramePlacement {
             case .center: proposed = (low + high - extent) / 2
             case .trailing: proposed = high - extent
             }
-            return clampsToVisible ? max(low, min(proposed, max(low, high - extent))) : round(proposed)
+            return clampsToVisible ? max(low, min(proposed, max(low, high - extent))) : (roundsCoordinates ? round(proposed) : proposed)
         }
         return CGPoint(x: coordinate(horizontal, size.width, visible.minX, visible.maxX),
                        y: coordinate(vertical, size.height, visible.minY, visible.maxY))

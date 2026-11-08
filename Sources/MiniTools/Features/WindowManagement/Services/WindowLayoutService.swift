@@ -264,6 +264,7 @@ enum WindowLayoutService {
                         return WindowActionOutcome(candidateIndex: 0, didReachTarget: false)
                     }
                     target = planned
+                    trace.event("resizeAnchor.\(WindowGeometry.composedResizeAnchor(currentFrame: current, visibleFrame: visible))")
                     statisticsID = size.statisticsID
                     title = size.title
                 case .composedPlacement(let placement):
@@ -321,6 +322,9 @@ enum WindowLayoutService {
                         check: { try gate.check(ticket) }, trace: trace,
                         policy: policy, initial: current, allowsResize: allowsResize,
                         placement: {
+                            if case .composedSize = action {
+                                return WindowGeometry.composedSizePlacement(currentFrame: current, visibleFrame: destination)
+                            }
                             if case .composedPlacement(let placement) = action {
                                 return WindowFramePlacement(composed: placement, visible: destination)
                             }

@@ -130,8 +130,8 @@ final class ComposedWindowLayoutTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
         XCTAssertEqual(settings.composedWindowControlShortcut(for: .lowerLeftPlacement), customH)
         XCTAssertEqual(settings.composedWindowControlShortcut(for: .lowerRightPlacement), customL)
-        let keys: [(ComposedWindowControlID, Int)] = [(.upperLeftPlacement, kVK_ANSI_U), (.lowerLeftPlacement, kVK_ANSI_J),
-                                                     (.upperRightPlacement, kVK_ANSI_I), (.lowerRightPlacement, kVK_ANSI_K)]
+        let keys: [(ComposedWindowControlID, Int)] = [(.upperLeftPlacement, kVK_ANSI_U), (.lowerLeftPlacement, kVK_ANSI_H),
+                                                     (.upperRightPlacement, kVK_ANSI_O), (.lowerRightPlacement, kVK_ANSI_L)]
         for (id, code) in keys {
             XCTAssertEqual(ComposedWindowControlCatalog.defaultShortcuts[id]?.keyCode, UInt32(code))
             XCTAssertEqual(ComposedWindowControlCatalog.defaultShortcuts[id]?.carbonModifiers, KeyboardShortcut.panelDefault.carbonModifiers)
