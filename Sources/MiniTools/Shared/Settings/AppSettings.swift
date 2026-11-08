@@ -309,47 +309,32 @@ final class AppSettings: ObservableObject {
             guard let id = ComposedWindowControlID(rawValue: rawID) else { continue }
             shortcuts[id] = shortcut
         }
-        // Freeze each historical layout so users skipping a release migrate
-        // through the same stages. Match saved defaults only, never custom keys.
+        guard !defaults.bool(forKey: Keys.composedCornerResizeDefaultsMigrated) else { return shortcuts }
+        // Choose exactly one source layout. Passing custom keys through an
+        // intermediate layout could mistake them for that release's defaults.
         let previousKeys: [ComposedWindowControlID: Int] = [
             .fullOrHalfHeight: kVK_ANSI_Backslash, .twoThirdsWidth: kVK_ANSI_H,
             .halfOrThirdFullHeight: kVK_ANSI_L, .halfOrThirdHalfHeight: kVK_ANSI_O,
             .upperLeftPlacement: kVK_ANSI_U, .lowerLeftPlacement: kVK_ANSI_J,
             .upperRightPlacement: kVK_ANSI_I, .lowerRightPlacement: kVK_ANSI_K
         ]
-        var saved = stored ?? [:]
-        func migrate(_ keys: [ComposedWindowControlID: Int], to destination: [ComposedWindowControlID: KeyboardShortcut],
-                     marker: String) {
-            guard !defaults.bool(forKey: marker) else { return }
-            for (id, code) in keys {
-                let oldDefault = KeyboardShortcut(keyCode: UInt32(code),
-                    carbonModifiers: KeyboardShortcut.panelDefault.carbonModifiers)
-                if saved[id.rawValue] == oldDefault {
-                    shortcuts[id] = destination[id]
-                }
-            }
-            let raw = Dictionary(uniqueKeysWithValues: shortcuts.map { ($0.key.rawValue, $0.value) })
-            if let data = try? JSONEncoder().encode(raw) {
-                defaults.set(data, forKey: Keys.composedWindowControlShortcuts)
-                defaults.set(true, forKey: marker)
-                saved = raw
+        let originalKeys: [ComposedWindowControlID: Int] = [
+            .fullOrHalfHeight: kVK_ANSI_U, .twoThirdsWidth: kVK_ANSI_I,
+            .halfOrThirdFullHeight: kVK_ANSI_J, .halfOrThirdHalfHeight: kVK_ANSI_K,
+            .upperLeftPlacement: kVK_ANSI_Y, .lowerLeftPlacement: kVK_ANSI_H,
+            .upperRightPlacement: kVK_ANSI_O, .lowerRightPlacement: kVK_ANSI_L
+        ]
+        let sourceKeys = defaults.bool(forKey: Keys.composedScreenshotDefaultsMigrated) ? previousKeys : originalKeys
+        for (id, code) in sourceKeys {
+            let oldDefault = KeyboardShortcut(keyCode: UInt32(code),
+                carbonModifiers: KeyboardShortcut.panelDefault.carbonModifiers)
+            if stored?[id.rawValue] == oldDefault {
+                shortcuts[id] = ComposedWindowControlCatalog.defaultShortcuts[id]
             }
         }
-        // Fresh installations must not pass new defaults through old stages.
-        if stored != nil {
-            let originalKeys: [ComposedWindowControlID: Int] = [
-                .fullOrHalfHeight: kVK_ANSI_U, .twoThirdsWidth: kVK_ANSI_I,
-                .halfOrThirdFullHeight: kVK_ANSI_J, .halfOrThirdHalfHeight: kVK_ANSI_K,
-                .upperLeftPlacement: kVK_ANSI_Y, .lowerLeftPlacement: kVK_ANSI_H,
-                .upperRightPlacement: kVK_ANSI_O, .lowerRightPlacement: kVK_ANSI_L
-            ]
-            let previous = previousKeys.mapValues {
-                KeyboardShortcut(keyCode: UInt32($0), carbonModifiers: KeyboardShortcut.panelDefault.carbonModifiers)
-            }
-            migrate(originalKeys, to: previous, marker: Keys.composedScreenshotDefaultsMigrated)
-            migrate(previousKeys, to: ComposedWindowControlCatalog.defaultShortcuts,
-                    marker: Keys.composedCornerResizeDefaultsMigrated)
-        } else {
+        let raw = Dictionary(uniqueKeysWithValues: shortcuts.map { ($0.key.rawValue, $0.value) })
+        if let data = try? JSONEncoder().encode(raw) {
+            defaults.set(data, forKey: Keys.composedWindowControlShortcuts)
             defaults.set(true, forKey: Keys.composedScreenshotDefaultsMigrated)
             defaults.set(true, forKey: Keys.composedCornerResizeDefaultsMigrated)
         }

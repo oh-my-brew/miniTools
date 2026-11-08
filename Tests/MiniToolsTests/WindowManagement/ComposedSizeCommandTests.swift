@@ -205,6 +205,26 @@ final class ComposedSizeCommandTests: XCTestCase {
         XCTAssertEqual(AppSettings(defaults: defaults).composedWindowControlShortcut(for: .twoThirdsWidth), shortcut(kVK_ANSI_H))
     }
 
+    @MainActor
+    func testSkippingPreviousReleaseDoesNotMistakeCustomKeysForIntermediateDefaults() throws {
+        let suite = "ComposedSizeTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        // These are custom in the original layout, but defaults in the skipped release.
+        let custom: [ComposedWindowControlID: Int] = [
+            .twoThirdsWidth: kVK_ANSI_H, .halfOrThirdFullHeight: kVK_ANSI_L,
+            .halfOrThirdHalfHeight: kVK_ANSI_O, .lowerLeftPlacement: kVK_ANSI_J,
+            .upperRightPlacement: kVK_ANSI_I, .lowerRightPlacement: kVK_ANSI_K
+        ]
+        let raw = Dictionary(uniqueKeysWithValues: custom.map { ($0.key.rawValue, shortcut($0.value)) })
+        defaults.set(try JSONEncoder().encode(raw), forKey: "composedWindowControlShortcuts")
+        for settings in [AppSettings(defaults: defaults), AppSettings(defaults: defaults)] {
+            for (id, code) in custom {
+                XCTAssertEqual(settings.composedWindowControlShortcut(for: id), shortcut(code))
+            }
+        }
+    }
+
     private func point(_ frame: CGRect, _ corner: ComposedWindowPlacement) -> CGPoint {
         switch corner {
         case .upperLeft: CGPoint(x: frame.minX, y: frame.minY)
