@@ -52,12 +52,12 @@ final class ComposedSizeCommandTests: XCTestCase {
     }
 
     @MainActor
-    func testFreshAndOldDefaultBindingsMatchScreenshotWithoutDuplicates() throws {
+    func testFreshAndCurrentDefaultBindingsMatchScreenshotWithoutDuplicates() throws {
         let oldKeys: [ComposedWindowControlID: Int] = [
-            .fullOrHalfHeight: kVK_ANSI_U, .twoThirdsWidth: kVK_ANSI_I,
-            .halfOrThirdFullHeight: kVK_ANSI_J, .halfOrThirdHalfHeight: kVK_ANSI_K,
-            .upperLeftPlacement: kVK_ANSI_Y, .lowerLeftPlacement: kVK_ANSI_H,
-            .upperRightPlacement: kVK_ANSI_O, .lowerRightPlacement: kVK_ANSI_L
+            .fullOrHalfHeight: kVK_ANSI_Backslash, .twoThirdsWidth: kVK_ANSI_H,
+            .halfOrThirdFullHeight: kVK_ANSI_L, .halfOrThirdHalfHeight: kVK_ANSI_O,
+            .upperLeftPlacement: kVK_ANSI_U, .lowerLeftPlacement: kVK_ANSI_J,
+            .upperRightPlacement: kVK_ANSI_I, .lowerRightPlacement: kVK_ANSI_K
         ]
         let expected: [ComposedWindowControlID: Int] = [
             .fullOrHalfHeight: kVK_ANSI_Backslash, .twoThirdsWidth: kVK_ANSI_I,
@@ -195,7 +195,6 @@ final class ComposedSizeCommandTests: XCTestCase {
         let custom = shortcut(kVK_ANSI_R)
         raw[ComposedWindowControlID.centerPlacement.rawValue] = custom
         defaults.set(try JSONEncoder().encode(raw), forKey: "composedWindowControlShortcuts")
-        defaults.set(true, forKey: "composedScreenshotDefaultsMigrated")
         let settings = AppSettings(defaults: defaults)
         for id in ComposedWindowControlID.allCases {
             XCTAssertEqual(settings.composedWindowControlShortcut(for: id),
