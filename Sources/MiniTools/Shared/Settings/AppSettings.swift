@@ -22,6 +22,7 @@ final class AppSettings: ObservableObject {
         static let cursorHighlightStyles = "cursorHighlightStyles"
         static let mouseBindings = "mouseBindings"
         static let mouseDragThresholdRatio = "mouseDragThresholdRatio"
+        static let keyboardRemappingRules = "keyboardRemappingRules"
         static let closedLidRunningEnabled = "closedLidRunningEnabled"
         static let rustDeskXHeatProtectionEnabled = "rustDeskXHeatProtectionEnabled"
         static let dsStoreManagementEnabled = "dsStoreManagementEnabled"
@@ -50,6 +51,7 @@ final class AppSettings: ObservableObject {
     @Published private(set) var cursorHighlightStyles: Set<CursorHighlightStyle>
     @Published private(set) var mouseBindings: [MouseBindingKey: AppCommand]
     @Published private(set) var mouseDragThresholdRatio: Double
+    @Published private(set) var keyboardRemappingRules: Set<KeyboardRemappingRule>
     @Published private(set) var closedLidRunningEnabled: Bool
     @Published private(set) var rustDeskXHeatProtectionEnabled: Bool
     @Published private(set) var dsStoreManagementEnabled: Bool
@@ -102,6 +104,10 @@ final class AppSettings: ObservableObject {
         cursorHighlightStyles = loadedCursorHighlightStyles
         mouseBindings = Self.loadMouseBindings(defaults: defaults)
         mouseDragThresholdRatio = Self.loadMouseDragThresholdRatio(defaults: defaults)
+        keyboardRemappingRules = Set(
+            (defaults.stringArray(forKey: Keys.keyboardRemappingRules) ?? [])
+                .compactMap(KeyboardRemappingRule.init(rawValue:))
+        )
         closedLidRunningEnabled = defaults.bool(forKey: Keys.closedLidRunningEnabled)
         rustDeskXHeatProtectionEnabled = defaults.bool(
             forKey: Keys.rustDeskXHeatProtectionEnabled
@@ -184,6 +190,18 @@ final class AppSettings: ObservableObject {
         guard normalized != mouseDragThresholdRatio else { return }
         mouseDragThresholdRatio = normalized
         defaults.set(normalized, forKey: Keys.mouseDragThresholdRatio)
+    }
+
+    func updateKeyboardRemappingRule(_ rule: KeyboardRemappingRule, enabled: Bool) {
+        if enabled {
+            keyboardRemappingRules.insert(rule)
+        } else {
+            keyboardRemappingRules.remove(rule)
+        }
+        defaults.set(
+            keyboardRemappingRules.map(\.rawValue).sorted(),
+            forKey: Keys.keyboardRemappingRules
+        )
     }
 
     func addWindowCompatibilityApplication(_ identifier: String) {

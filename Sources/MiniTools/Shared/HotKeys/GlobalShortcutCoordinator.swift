@@ -1,4 +1,6 @@
+import AppKit
 import Carbon
+import CoreGraphics
 import Foundation
 
 @MainActor
@@ -7,6 +9,7 @@ final class GlobalShortcutCoordinator: ObservableObject {
     @Published private(set) var clipboardHistoryError: String?
     @Published private(set) var windowControlErrors: [WindowControlID: String] = [:]
     @Published private(set) var composedWindowControlErrors: [ComposedWindowControlID: String] = [:]
+    @Published private(set) var keyboardRemappingError: String?
 
     var onStateChanged: (() -> Void)?
 
@@ -16,6 +19,12 @@ final class GlobalShortcutCoordinator: ObservableObject {
     private var windowControlHotKeys: [WindowControlID: GlobalHotKey] = [:]
     private var composedWindowControlHotKeys: [ComposedWindowControlID: GlobalHotKey] = [:]
     private var longPressRecognizers: [ComposedWindowControlID: HotKeyLongPressRecognizer] = [:]
+    private var capsLongPressIDs: Set<ComposedWindowControlID> = []
+    private var remappingActivationObserver: NSObjectProtocol?
+    private lazy var remappingMonitor = KeyboardRemappingMonitor(
+        availableCapsKeys: { [weak self] in self?.capsShortcutKeys ?? [] },
+        perform: { [weak self] action in self?.handleRemappingAction(action) }
+    )
 
     init(
         settings: AppSettings,
@@ -78,10 +87,23 @@ final class GlobalShortcutCoordinator: ObservableObject {
         registerInitialClipboardHistoryShortcut()
         registerCrossScreenShortcuts()
         registerActiveLayoutShortcuts()
+        remappingActivationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshKeyboardRemapping() }
+        }
+        refreshKeyboardRemapping()
         onStateChanged?()
     }
 
     func stop() {
+        remappingMonitor.stop()
+        if let remappingActivationObserver {
+            NotificationCenter.default.removeObserver(remappingActivationObserver)
+            self.remappingActivationObserver = nil
+        }
         cancelLongPresses()
         panelHotKey.unregister()
         clipboardHistoryHotKey.unregister()
@@ -90,6 +112,158 @@ final class GlobalShortcutCoordinator: ObservableObject {
         }
         for hotKey in composedWindowControlHotKeys.values {
             hotKey.unregister()
+        }
+    }
+
+    func updateKeyboardRemappingRule(_ rule: KeyboardRemappingRule, enabled: Bool) {
+        settings.updateKeyboardRemappingRule(rule, enabled: enabled)
+        refreshKeyboardRemapping()
+    }
+
+    private func refreshKeyboardRemapping() {
+        let rules = settings.keyboardRemappingRules
+        guard !rules.isEmpty else {
+            remappingMonitor.stop()
+            keyboardRemappingError = nil
+            return
+        }
+        guard AccessibilityAuthorization.isTrusted else {
+            remappingMonitor.stop()
+            keyboardRemappingError = "需要在「通用」中授予辅助功能权限"
+            return
+        }
+        guard CGPreflightListenEventAccess() else {
+            remappingMonitor.stop()
+            keyboardRemappingError = "需要在「通用」中授予输入监控权限"
+            return
+        }
+        if remappingMonitor.isRunning, remappingMonitor.enabled == rules,
+           keyboardRemappingError == nil { return }
+        remappingMonitor.stop()
+        remappingMonitor.enabled = rules
+        let running = remappingMonitor.start()
+        if rules.contains(.capsShortcuts), !remappingMonitor.capsAvailable {
+            keyboardRemappingError = "Caps Lock 物理按键监听不可用；其他已启用的映射仍可使用"
+        } else {
+            keyboardRemappingError = running ? nil : "键盘监听不可用，请检查系统授权"
+        }
+    }
+
+    private var capsShortcutKeys: Set<UInt16> {
+        let hyper = KeyboardShortcut.panelDefault.carbonModifiers
+        var codes: Set<UInt16> = []
+        if settings.panelShortcut.carbonModifiers == hyper, panelError == nil {
+            codes.insert(UInt16(settings.panelShortcut.keyCode))
+        }
+        switch settings.windowManagementMode {
+        case .classic:
+            for id in WindowControlCatalog.windowLayoutIDs {
+                let shortcut = settings.windowControlShortcut(for: id)
+                if shortcut.carbonModifiers == hyper, windowControlErrors[id] == nil {
+                    codes.insert(UInt16(shortcut.keyCode))
+                }
+            }
+        case .sizeAndPosition:
+            for id in ComposedWindowControlCatalog.descriptors.map(\.id) {
+                let shortcut = settings.composedWindowControlShortcut(for: id)
+                if shortcut.carbonModifiers == hyper, composedWindowControlErrors[id] == nil {
+                    codes.insert(UInt16(shortcut.keyCode))
+                }
+            }
+        }
+        for id in WindowControlCatalog.crossScreenIDs {
+            let shortcut = settings.windowControlShortcut(for: id)
+            if shortcut.carbonModifiers == hyper, windowControlErrors[id] == nil {
+                codes.insert(UInt16(shortcut.keyCode))
+            }
+        }
+        return codes
+    }
+
+    private func handleRemappingAction(_ action: KeyboardRemappingState.Action) {
+        switch action {
+        case let .sendGrave(modifiers):
+            DispatchQueue.main.async {
+                KeyboardRemappingMonitor.postGrave(modifiers)
+            }
+        case .hideSafari:
+            DispatchQueue.main.async { [weak self] in
+                guard let safari = NSWorkspace.shared.frontmostApplication,
+                      safari.bundleIdentifier == "com.apple.Safari" else { return }
+                if !safari.hide() {
+                    self?.keyboardRemappingError = "Safari 未能隐藏"
+                }
+            }
+        case .openCodex:
+            DispatchQueue.main.async { [weak self] in
+                guard let url = NSWorkspace.shared.urlForApplication(
+                    withBundleIdentifier: "com.openai.codex"
+                ) else {
+                    self?.keyboardRemappingError = "未找到 Codex 应用"
+                    return
+                }
+                NSWorkspace.shared.openApplication(
+                    at: url, configuration: NSWorkspace.OpenConfiguration()
+                ) { _, error in
+                    guard let error else { return }
+                    let message = "Codex 打开失败：\(error.localizedDescription)"
+                    Task { @MainActor [weak self] in
+                        self?.keyboardRemappingError = message
+                    }
+                }
+            }
+        case let .shortcutDown(code):
+            routeCapsShortcut(code, pressed: true)
+        case let .shortcutUp(code):
+            routeCapsShortcut(code, pressed: false)
+        case .cancelShortcuts:
+            for id in capsLongPressIDs { longPressRecognizers[id]?.cancel() }
+            capsLongPressIDs.removeAll()
+        }
+    }
+
+    private func routeCapsShortcut(_ code: UInt16, pressed: Bool) {
+        let hyper = KeyboardShortcut.panelDefault.carbonModifiers
+        func matches(_ shortcut: KeyboardShortcut) -> Bool {
+            shortcut.carbonModifiers == hyper && shortcut.keyCode == UInt32(code)
+        }
+        if matches(settings.panelShortcut), panelError == nil {
+            if pressed { panelHotKey.onPressed() }
+            return
+        }
+        if settings.windowManagementMode == .classic {
+            for id in WindowControlCatalog.windowLayoutIDs {
+                if matches(settings.windowControlShortcut(for: id)),
+                   windowControlErrors[id] == nil,
+                   let key = windowControlHotKeys[id] {
+                    if pressed { key.onPressed() }
+                    return
+                }
+            }
+        } else {
+            for descriptor in ComposedWindowControlCatalog.descriptors {
+                if matches(settings.composedWindowControlShortcut(for: descriptor.id)),
+                   composedWindowControlErrors[descriptor.id] == nil,
+                   let key = composedWindowControlHotKeys[descriptor.id] {
+                    if descriptor.supportsLongPress {
+                        if pressed {
+                            capsLongPressIDs.insert(descriptor.id)
+                        } else {
+                            capsLongPressIDs.remove(descriptor.id)
+                        }
+                    }
+                    if pressed { key.onPressed() } else { key.onReleased?() }
+                    return
+                }
+            }
+        }
+        for id in WindowControlCatalog.crossScreenIDs {
+            if matches(settings.windowControlShortcut(for: id)),
+               windowControlErrors[id] == nil,
+               let key = windowControlHotKeys[id] {
+                if pressed { key.onPressed() }
+                return
+            }
         }
     }
 
