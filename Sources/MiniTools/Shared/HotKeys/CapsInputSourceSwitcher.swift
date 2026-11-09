@@ -41,11 +41,16 @@ final class CapsInputSourceSwitcher {
             inputSource = ascii
         } else {
             let enabledSources = TISCreateInputSourceList(nil, false).takeRetainedValue()
-            guard let source = (0..<CFArrayGetCount(enabledSources)).lazy.compactMap({ index -> TISInputSource? in
-                guard let pointer = CFArrayGetValueAtIndex(enabledSources, index) else { return nil }
+            var previousSource: TISInputSource?
+            for index in 0..<CFArrayGetCount(enabledSources) {
+                guard let pointer = CFArrayGetValueAtIndex(enabledSources, index) else { continue }
                 let candidate = Unmanaged<TISInputSource>.fromOpaque(pointer).takeUnretainedValue()
-                return identifier(of: candidate) == target ? candidate : nil
-            }).first else {
+                if identifier(of: candidate) == target {
+                    previousSource = candidate
+                    break
+                }
+            }
+            guard let source = previousSource else {
                 return "原输入法已不可用，请先手动选择一种输入法"
             }
             inputSource = source
