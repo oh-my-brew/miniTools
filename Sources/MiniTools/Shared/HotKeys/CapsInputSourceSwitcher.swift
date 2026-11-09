@@ -8,6 +8,7 @@ import Foundation
 final class CapsInputSourceSwitcher {
     private static let previousIDKey = "capsLockPreviousInputSourceID"
     private let defaults: UserDefaults
+    private var previousSource: TISInputSource?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -19,6 +20,7 @@ final class CapsInputSourceSwitcher {
         guard let currentID = identifier(of: current),
               let asciiID = identifier(of: ascii),
               currentID != asciiID else { return }
+        previousSource = current
         defaults.set(currentID, forKey: Self.previousIDKey)
     }
 
@@ -39,18 +41,20 @@ final class CapsInputSourceSwitcher {
         let inputSource: TISInputSource
         if target == asciiID {
             inputSource = ascii
+        } else if let previousSource, identifier(of: previousSource) == target {
+            inputSource = previousSource
         } else {
             let enabledSources = TISCreateInputSourceList(nil, false).takeRetainedValue()
-            var previousSource: TISInputSource?
+            var foundSource: TISInputSource?
             for index in 0..<CFArrayGetCount(enabledSources) {
                 guard let pointer = CFArrayGetValueAtIndex(enabledSources, index) else { continue }
                 let candidate = Unmanaged<TISInputSource>.fromOpaque(pointer).takeUnretainedValue()
                 if identifier(of: candidate) == target {
-                    previousSource = candidate
+                    foundSource = candidate
                     break
                 }
             }
-            guard let source = previousSource else {
+            guard let source = foundSource else {
                 return "原输入法已不可用，请先手动选择一种输入法"
             }
             inputSource = source
@@ -59,6 +63,7 @@ final class CapsInputSourceSwitcher {
             return "切换输入法失败，请检查输入法是否已启用"
         }
         if target == asciiID {
+            previousSource = current
             defaults.set(currentID, forKey: Self.previousIDKey)
         }
         return nil
