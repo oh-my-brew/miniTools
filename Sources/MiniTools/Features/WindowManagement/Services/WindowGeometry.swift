@@ -319,6 +319,11 @@ enum WindowGeometry {
     /// Both axes must match; a single touching edge does not select a corner.
     static func composedResizeAnchor(currentFrame: CGRect, visibleFrame: CGRect,
                                      tolerance: CGFloat = 8) -> ComposedWindowPlacement {
+        // A full-size window matches every corner; resizing it should start centered.
+        if abs(currentFrame.width - visibleFrame.width) <= tolerance,
+           abs(currentFrame.height - visibleFrame.height) <= tolerance {
+            return .center
+        }
         let left = abs(currentFrame.minX - visibleFrame.minX) <= tolerance
         let right = abs(currentFrame.maxX - visibleFrame.maxX) <= tolerance
         let top = abs(currentFrame.minY - visibleFrame.minY) <= tolerance
