@@ -126,9 +126,11 @@ final class ComposedSizeCommandTests: XCTestCase {
         }
     }
 
-    func testMatchingCornerPriorityForFullAndNearlyFullWindows() {
+    func testFullSizeCentersBeforeMatchingCornersAndOtherEdgesKeepPriority() {
         let cases: [(CGRect, ComposedWindowPlacement)] = [
-            (visible, .upperLeft),
+            (visible, .center),
+            (visible.insetBy(dx: 3, dy: 3), .center),
+            (CGRect(x: visible.minX, y: visible.minY, width: visible.width - 8, height: visible.height - 8), .center),
             (CGRect(x: visible.minX, y: visible.minY, width: 300, height: visible.height), .upperLeft),
             (CGRect(x: visible.maxX - 300, y: visible.minY, width: 300, height: visible.height), .upperRight),
             (CGRect(x: visible.minX, y: visible.maxY - 250, width: visible.width, height: 250), .lowerLeft),
@@ -137,6 +139,41 @@ final class ComposedSizeCommandTests: XCTestCase {
         for (frame, expected) in cases {
             XCTAssertEqual(WindowGeometry.composedResizeAnchor(currentFrame: frame, visibleFrame: visible), expected)
         }
+    }
+
+    func testResizingFullSizeWindowCentersAllChangedTargetsButMatchingSizeDoesNothing() throws {
+        for current in [visible, visible.insetBy(dx: 3, dy: 3)] {
+            for id in ComposedWindowControlCatalog.sizeIDs {
+                for press in [WindowShortcutPress.short, .long] {
+                    let size = try XCTUnwrap(ComposedWindowControlCatalog.sizeTarget(for: id, press: press))
+                    let target = WindowGeometry.targetFrame(for: size.frame, in: visible)
+                    let planned = WindowGeometry.composedSizeTargetFrame(
+                        currentFrame: current, size: size, visibleFrame: visible)
+                    if abs(current.width - target.width) <= 8, abs(current.height - target.height) <= 8 {
+                        XCTAssertNil(planned)
+                    } else {
+                        XCTAssertEqual(planned, WindowGeometry.centeredFrame(target, in: visible))
+                    }
+                }
+            }
+        }
+    }
+
+    func testCompatibleResizeCentersFullSizeWindowUsingObservedConstrainedSize() throws {
+        let size = try XCTUnwrap(ComposedWindowControlCatalog.sizeTarget(for: .halfOrThirdHalfHeight, press: .short))
+        let target = try XCTUnwrap(WindowGeometry.composedSizeTargetFrame(
+            currentFrame: visible, size: size, visibleFrame: visible))
+        let placement = WindowGeometry.composedSizePlacement(currentFrame: visible, visibleFrame: visible)
+        var actual = visible
+        var time: TimeInterval = 0
+        let result = try WindowFrameAdjustment.run(
+            target: target, read: { actual }, position: { actual.origin = $0 },
+            size: { actual.size = CGSize(width: max($0.width, 800), height: max($0.height, 600)) },
+            check: {}, trace: WindowAdjustmentTrace(command: "test", requestedAt: 0),
+            policy: .compatible, initial: visible, placement: placement,
+            uptime: { time }, wait: { time += 0.02 })
+        XCTAssertEqual(result.frame.size, CGSize(width: 800, height: 600))
+        XCTAssertEqual(result.frame, WindowGeometry.centeredFrame(result.frame, in: visible))
     }
 
     func testNoCornerAlwaysCentersIncludingFullWidthHalfHeight() throws {
