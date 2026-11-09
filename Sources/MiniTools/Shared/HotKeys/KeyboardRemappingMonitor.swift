@@ -1,6 +1,6 @@
 import AppKit
 import Carbon
-import CoreGraphics
+@preconcurrency import CoreGraphics
 import Foundation
 import IOKit
 import IOKit.hid
@@ -36,6 +36,7 @@ private final class CapsLockSystemState {
         defer { IOObjectRelease(service) }
         guard IOServiceOpen(service, mach_task_self_, UInt32(kIOHIDParamConnectType),
                             &connection) == KERN_SUCCESS, connection != 0 else { return nil }
+        guard read() != nil else { return nil }
     }
 
     func read() -> Bool? {
@@ -66,6 +67,9 @@ final class KeyboardRemappingMonitor {
     private var hidManager: IOHIDManager?
     private var capsSystem: CapsLockSystemState?
     private var capsOriginalState: Bool?
+    private var capsWasReleased = false
+    private var capsPhysicalHeld = false
+    private(set) var capsAvailable = false
     private static let postedMarker: Int64 = 0x4D54_524D_4150
 
     init(
@@ -83,13 +87,15 @@ final class KeyboardRemappingMonitor {
     func start() -> Bool {
         if isRunning { return true }
         stop()
-        state.enabled = enabled
+        var activeRules = enabled
         if enabled.contains(.capsShortcuts) {
-            guard startCapsMonitor() else {
-                stop()
-                return false
+            capsAvailable = startCapsMonitor()
+            if !capsAvailable {
+                activeRules.remove(.capsShortcuts)
             }
         }
+        guard !activeRules.isEmpty else { return false }
+        state.enabled = activeRules
         let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
             | CGEventMask(1 << CGEventType.keyUp.rawValue)
             | CGEventMask(1 << CGEventType.flagsChanged.rawValue)
@@ -119,13 +125,19 @@ final class KeyboardRemappingMonitor {
         }
         eventTap = nil
         eventSource = nil
+        if let original = capsOriginalState {
+            _ = capsSystem?.set(original)
+        }
         if let hidManager {
-            IOHIDManagerUnscheduleFromRunLoop(hidManager, CFRunLoopGetMain(), kCFRunLoopCommonModes)
+            IOHIDManagerUnscheduleFromRunLoop(hidManager, CFRunLoopGetMain(), kCFRunLoopCommonModes!)
             IOHIDManagerClose(hidManager, IOOptionBits(kIOHIDOptionsTypeNone))
         }
         hidManager = nil
         capsSystem = nil
         capsOriginalState = nil
+        capsWasReleased = false
+        capsPhysicalHeld = false
+        capsAvailable = false
         state.reset()
         perform(.cancelShortcuts)
     }
@@ -141,9 +153,9 @@ final class KeyboardRemappingMonitor {
         IOHIDManagerRegisterInputValueCallback(
             manager, miniToolsCapsValueCallback, Unmanaged.passUnretained(self).toOpaque()
         )
-        IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), kCFRunLoopCommonModes)
+        IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), kCFRunLoopCommonModes!)
         guard IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone)) == KERN_SUCCESS else {
-            IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), kCFRunLoopCommonModes)
+            IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), kCFRunLoopCommonModes!)
             return false
         }
         self.capsSystem = capsSystem
@@ -156,7 +168,9 @@ final class KeyboardRemappingMonitor {
         guard IOHIDElementGetUsagePage(element) == 0x07,
               IOHIDElementGetUsage(element) == 0x39 else { return }
         let down = IOHIDValueGetIntegerValue(value) != 0
-        if down {
+        capsPhysicalHeld = down
+        capsWasReleased = !down
+        if down, capsOriginalState == nil {
             capsOriginalState = capsSystem?.read()
         }
         let outcome = state.capsChanged(down: down)
@@ -187,9 +201,16 @@ final class KeyboardRemappingMonitor {
                     at: ProcessInfo.processInfo.systemUptime
                 )
                 for action in result.actions { perform(action) }
-            } else if code == UInt16(kVK_CapsLock), enabled.contains(.capsShortcuts) {
+            } else if code == UInt16(kVK_CapsLock), capsAvailable {
                 // The HID callback handles the physical down/up; the system latch
                 // is reconciled on release, without forwarding a Caps modifier.
+                if capsWasReleased {
+                    capsWasReleased = false
+                    return nil
+                }
+                if capsOriginalState == nil {
+                    capsOriginalState = !event.flags.contains(.maskAlphaShift)
+                }
                 if let original = capsOriginalState {
                     _ = capsSystem?.set(original)
                 }
@@ -202,8 +223,7 @@ final class KeyboardRemappingMonitor {
         guard type == .keyDown || type == .keyUp else {
             return Unmanaged.passUnretained(event)
         }
-        state.enabled = enabled
-        state.availableCapsKeys = availableCapsKeys()
+        if capsPhysicalHeld { state.availableCapsKeys = availableCapsKeys() }
         let result: KeyboardRemappingState.Result
         if type == .keyDown {
             var modifiers: KeyboardRemappingState.Modifiers = []
@@ -215,7 +235,10 @@ final class KeyboardRemappingMonitor {
                 code,
                 modifiers: modifiers,
                 isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0,
-                safariFrontmost: NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.Safari"
+                safariFrontmost: code == UInt16(kVK_ANSI_Q)
+                    && modifiers == [.command]
+                    && enabled.contains(.safariHide)
+                    && NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.Safari"
             )
         } else {
             result = state.keyUp(code)

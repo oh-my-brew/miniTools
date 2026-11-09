@@ -74,6 +74,7 @@ struct KeyboardRemappingState {
     mutating func capsChanged(down: Bool) -> (used: Bool, actions: [Action]) {
         guard enabled.contains(.capsShortcuts) else { return (false, []) }
         if down {
+            guard !capsHeld else { return (false, []) }
             capsHeld = true
             capsUsed = false
             return (false, [])
