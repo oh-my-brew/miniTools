@@ -8,8 +8,12 @@ import IOKit.hid
 private let miniToolsRemappingEventCallback: CGEventTapCallBack = {
     _, type, event, context in
     guard let context else { return Unmanaged.passUnretained(event) }
+    let monitorAddress = Int(bitPattern: context)
     return MainActor.assumeIsolated {
-        Unmanaged<KeyboardRemappingMonitor>.fromOpaque(context).takeUnretainedValue()
+        guard let pointer = UnsafeMutableRawPointer(bitPattern: monitorAddress) else {
+            return Unmanaged.passUnretained(event)
+        }
+        return Unmanaged<KeyboardRemappingMonitor>.fromOpaque(pointer).takeUnretainedValue()
             .handle(type: type, event: event)
     }
 }
@@ -17,9 +21,15 @@ private let miniToolsRemappingEventCallback: CGEventTapCallBack = {
 private let miniToolsCapsValueCallback: IOHIDValueCallback = {
     context, _, _, value in
     guard let context else { return }
+    let element = IOHIDValueGetElement(value)
+    guard IOHIDElementGetUsagePage(element) == 0x07,
+          IOHIDElementGetUsage(element) == 0x39 else { return }
+    let down = IOHIDValueGetIntegerValue(value) != 0
+    let monitorAddress = Int(bitPattern: context)
     MainActor.assumeIsolated {
-        Unmanaged<KeyboardRemappingMonitor>.fromOpaque(context).takeUnretainedValue()
-            .handleHIDValue(value)
+        guard let pointer = UnsafeMutableRawPointer(bitPattern: monitorAddress) else { return }
+        Unmanaged<KeyboardRemappingMonitor>.fromOpaque(pointer).takeUnretainedValue()
+            .handleCapsChanged(down: down)
     }
 }
 
@@ -129,7 +139,7 @@ final class KeyboardRemappingMonitor {
             _ = capsSystem?.set(original)
         }
         if let hidManager {
-            IOHIDManagerUnscheduleFromRunLoop(hidManager, CFRunLoopGetMain(), kCFRunLoopCommonModes!)
+            IOHIDManagerUnscheduleFromRunLoop(hidManager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
             IOHIDManagerClose(hidManager, IOOptionBits(kIOHIDOptionsTypeNone))
         }
         hidManager = nil
@@ -153,9 +163,9 @@ final class KeyboardRemappingMonitor {
         IOHIDManagerRegisterInputValueCallback(
             manager, miniToolsCapsValueCallback, Unmanaged.passUnretained(self).toOpaque()
         )
-        IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), kCFRunLoopCommonModes!)
+        IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
         guard IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone)) == KERN_SUCCESS else {
-            IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), kCFRunLoopCommonModes!)
+            IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
             return false
         }
         self.capsSystem = capsSystem
@@ -163,11 +173,7 @@ final class KeyboardRemappingMonitor {
         return true
     }
 
-    fileprivate func handleHIDValue(_ value: IOHIDValue) {
-        let element = IOHIDValueGetElement(value)
-        guard IOHIDElementGetUsagePage(element) == 0x07,
-              IOHIDElementGetUsage(element) == 0x39 else { return }
-        let down = IOHIDValueGetIntegerValue(value) != 0
+    fileprivate func handleCapsChanged(down: Bool) {
         capsPhysicalHeld = down
         capsWasReleased = !down
         if down, capsOriginalState == nil {
