@@ -335,9 +335,34 @@ enum WindowGeometry {
         return .center
     }
 
-    static func composedSizePlacement(currentFrame: CGRect, visibleFrame: CGRect) -> WindowFramePlacement {
-        WindowFramePlacement(resizing: composedResizeAnchor(currentFrame: currentFrame, visibleFrame: visibleFrame),
-                             currentFrame: currentFrame, visible: visibleFrame)
+    private static func fullSizeToUpperHalf(
+        currentFrame: CGRect, size: ComposedWindowSizeTarget, visibleFrame: CGRect
+    ) -> Bool {
+        size.frame == UnitWindowFrame(0, 0, 1, 0.5)
+            && abs(currentFrame.width - visibleFrame.width) <= 8
+            && abs(currentFrame.height - visibleFrame.height) <= 8
+    }
+
+    static func composedSizeAnchor(
+        currentFrame: CGRect, size: ComposedWindowSizeTarget, visibleFrame: CGRect
+    ) -> ComposedWindowPlacement {
+        fullSizeToUpperHalf(currentFrame: currentFrame, size: size, visibleFrame: visibleFrame)
+            ? .upperLeft
+            : composedResizeAnchor(currentFrame: currentFrame, visibleFrame: visibleFrame)
+    }
+
+    static func composedSizePlacement(
+        currentFrame: CGRect, size: ComposedWindowSizeTarget, visibleFrame: CGRect
+    ) -> WindowFramePlacement {
+        if fullSizeToUpperHalf(currentFrame: currentFrame, size: size, visibleFrame: visibleFrame) {
+            // Snap to the usable screen's top edge, including when the old
+            // full-size window differs from that edge by a few points.
+            return WindowFramePlacement(composed: .upperLeft, visible: visibleFrame)
+        }
+        return WindowFramePlacement(
+            resizing: composedResizeAnchor(currentFrame: currentFrame, visibleFrame: visibleFrame),
+            currentFrame: currentFrame, visible: visibleFrame
+        )
     }
 
     /// Same-size commands leave both position and size alone. Otherwise keep
@@ -351,7 +376,7 @@ enum WindowGeometry {
         guard correctedSizeAfterApplyingFrame(actualFrame: currentFrame, targetFrame: target) != nil else {
             return nil
         }
-        let placement = composedSizePlacement(currentFrame: currentFrame, visibleFrame: visibleFrame)
+        let placement = composedSizePlacement(currentFrame: currentFrame, size: size, visibleFrame: visibleFrame)
         return CGRect(origin: placement.origin(for: target.size), size: target.size)
     }
 
