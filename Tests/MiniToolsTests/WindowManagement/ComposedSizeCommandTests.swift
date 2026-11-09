@@ -141,7 +141,7 @@ final class ComposedSizeCommandTests: XCTestCase {
         }
     }
 
-    func testResizingFullSizeWindowCentersAllChangedTargetsButMatchingSizeDoesNothing() throws {
+    func testResizingFullSizeWindowPlacesUpperHalfAtTopAndCentersOtherTargets() throws {
         for current in [visible, visible.insetBy(dx: 3, dy: 3)] {
             for id in ComposedWindowControlCatalog.sizeIDs {
                 for press in [WindowShortcutPress.short, .long] {
@@ -152,7 +152,11 @@ final class ComposedSizeCommandTests: XCTestCase {
                     if abs(current.width - target.width) <= 8, abs(current.height - target.height) <= 8 {
                         XCTAssertNil(planned)
                     } else {
-                        XCTAssertEqual(planned, WindowGeometry.centeredFrame(target, in: visible))
+                        if size.frame == UnitWindowFrame(0, 0, 1, 0.5) {
+                            XCTAssertEqual(planned, CGRect(origin: visible.origin, size: target.size))
+                        } else {
+                            XCTAssertEqual(planned, WindowGeometry.centeredFrame(target, in: visible))
+                        }
                     }
                 }
             }
@@ -163,7 +167,9 @@ final class ComposedSizeCommandTests: XCTestCase {
         let size = try XCTUnwrap(ComposedWindowControlCatalog.sizeTarget(for: .halfOrThirdHalfHeight, press: .short))
         let target = try XCTUnwrap(WindowGeometry.composedSizeTargetFrame(
             currentFrame: visible, size: size, visibleFrame: visible))
-        let placement = WindowGeometry.composedSizePlacement(currentFrame: visible, visibleFrame: visible)
+        let placement = WindowGeometry.composedSizePlacement(
+            currentFrame: visible, size: size, visibleFrame: visible
+        )
         var actual = visible
         var time: TimeInterval = 0
         let result = try WindowFrameAdjustment.run(
@@ -188,6 +194,34 @@ final class ComposedSizeCommandTests: XCTestCase {
         }
     }
 
+    func testFullSizeToUpperHalfAlignsTopWithCompatibleMinimumHeight() throws {
+        let size = try XCTUnwrap(ComposedWindowControlCatalog.sizeTarget(for: .fullOrHalfHeight, press: .long))
+        let nearFull = visible.insetBy(dx: 3, dy: 3)
+        let target = try XCTUnwrap(WindowGeometry.composedSizeTargetFrame(
+            currentFrame: nearFull, size: size, visibleFrame: visible
+        ))
+        let placement = WindowGeometry.composedSizePlacement(
+            currentFrame: nearFull, size: size, visibleFrame: visible
+        )
+        XCTAssertEqual(WindowGeometry.composedSizeAnchor(
+            currentFrame: nearFull, size: size, visibleFrame: visible
+        ), .upperLeft)
+        XCTAssertEqual(target, CGRect(x: visible.minX, y: visible.minY, width: visible.width, height: visible.height / 2))
+
+        var actual = nearFull
+        var time: TimeInterval = 0
+        let result = try WindowFrameAdjustment.run(
+            target: target, read: { actual }, position: { actual.origin = $0 },
+            size: { actual.size = CGSize(width: $0.width, height: max($0.height, 600)) },
+            check: {}, trace: WindowAdjustmentTrace(command: "test", requestedAt: 0),
+            policy: .compatible, initial: nearFull, placement: placement,
+            uptime: { time }, wait: { time += 0.02 }
+        )
+        XCTAssertEqual(result.frame.origin, visible.origin)
+        XCTAssertEqual(result.frame.height, 600)
+        XCTAssertEqual(result.outcome, .adjustedToObservedSize)
+    }
+
     func testCompatibleResizeKeepsActualCornerWhenApplicationEnforcesMinimumSize() throws {
         for corner in [ComposedWindowPlacement.upperLeft, .lowerLeft, .upperRight, .lowerRight, .center] {
             let initial = WindowGeometry.composedPlacementTarget(
@@ -197,7 +231,9 @@ final class ComposedSizeCommandTests: XCTestCase {
                 let size = try XCTUnwrap(ComposedWindowControlCatalog.sizeTarget(for: id, press: .long))
                 let target = try XCTUnwrap(WindowGeometry.composedSizeTargetFrame(
                     currentFrame: initial, size: size, visibleFrame: visible))
-                let placement = WindowGeometry.composedSizePlacement(currentFrame: initial, visibleFrame: visible)
+                let placement = WindowGeometry.composedSizePlacement(
+                    currentFrame: initial, size: size, visibleFrame: visible
+                )
                 var actual = initial
                 var time: TimeInterval = 0
                 let result = try WindowFrameAdjustment.run(
