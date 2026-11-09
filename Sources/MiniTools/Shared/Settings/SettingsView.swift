@@ -6,6 +6,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     case clipboardHistory
     case defaultApplications
     case windowManagement
+    case keyboard
     case closedLidRunning
     case dsStoreManagement
     case mouseBindings
@@ -21,6 +22,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .clipboardHistory: "剪贴板历史"
         case .defaultApplications: "默认应用"
         case .windowManagement: "窗口管理"
+        case .keyboard: "键盘映射"
         case .closedLidRunning: "合盖运行"
         case .dsStoreManagement: "DS_Store 管理"
         case .mouseBindings: "鼠标侧键"
@@ -41,6 +43,8 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
             "查看文本与代码文件的当前默认应用，并按需改为 Sublime Text。"
         case .windowManagement:
             "配置窗口布局、跨屏操作与全局快捷键。"
+        case .keyboard:
+            "按需替代常用的 Karabiner 按键映射。"
         case .closedLidRunning:
             "控制合盖运行、防发热保护并查看系统状态。"
         case .dsStoreManagement:
@@ -61,6 +65,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .clipboardHistory: "clipboard"
         case .defaultApplications: "doc.text"
         case .windowManagement: "macwindow"
+        case .keyboard: "keyboard"
         case .closedLidRunning: "laptopcomputer"
         case .dsStoreManagement: "doc.badge.gearshape"
         case .mouseBindings: "computermouse"
@@ -162,6 +167,8 @@ private struct SettingsCategoryDetail: View {
                 DefaultApplicationSettingsView()
             case .windowManagement:
                 windowManagementSettings
+            case .keyboard:
+                keyboardRemappingSettings
             case .closedLidRunning:
                 closedLidRunningSettings
             case .dsStoreManagement:
@@ -252,6 +259,29 @@ private struct SettingsCategoryDetail: View {
                     title: "JPEG 压缩质量",
                     subtitle: "用于“压缩图片”操作；质量越高，文件通常越大"
                 )
+            }
+        }
+    }
+
+    private var keyboardRemappingSettings: some View {
+        Section {
+            ForEach(KeyboardRemappingRule.allCases) { rule in
+                Toggle(rule.title, isOn: Binding(
+                    get: { settings.keyboardRemappingRules.contains(rule) },
+                    set: { shortcutCoordinator.updateKeyboardRemappingRule(rule, enabled: $0) }
+                ))
+            }
+        } header: {
+            Text("按键映射")
+        } footer: {
+            Text("各项默认关闭。启用前请关闭 Karabiner 或 Homerow 中相同的规则，避免重复处理。Caps Lock 单按仍切换大写锁定；按住它可触发当前配置为 ⌃⌥⇧⌘ 的 miniTools 快捷键，不会向其他应用发送四修饰键。")
+        }
+
+        if let error = shortcutCoordinator.keyboardRemappingError {
+            Section {
+                Text(error).foregroundStyle(.red)
+            } footer: {
+                Text("请在「通用」中检查辅助功能和输入监控授权；原有快捷键不受影响。")
             }
         }
     }
