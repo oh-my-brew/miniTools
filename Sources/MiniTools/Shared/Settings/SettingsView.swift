@@ -275,7 +275,7 @@ private struct SettingsCategoryDetail: View {
         } header: {
             Text("按键映射")
         } footer: {
-            Text("各项默认关闭。启用前请关闭 Karabiner 或 Homerow 中相同的规则，避免重复处理。Caps Lock 单按仍切换大写锁定；按住它可触发当前配置为 ⌃⌥⇧⌘ 的 miniTools 快捷键，不会向其他应用发送四修饰键。")
+            Text("各项默认关闭。启用前请关闭 Karabiner 或 Homerow 中相同的规则，避免重复处理。Caps Lock 单按在英文键盘布局与上次使用的其他输入法之间切换；按住它可触发当前配置为 ⌃⌥⇧⌘ 的 miniTools 快捷键。两种操作均不切换大小写，也不会向其他应用发送四修饰键。首次在英文布局下使用前，请先手动选一次其他输入法。")
         }
 
         if let error = shortcutCoordinator.keyboardRemappingError {

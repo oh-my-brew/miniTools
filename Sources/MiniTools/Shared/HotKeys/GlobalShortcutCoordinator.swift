@@ -21,6 +21,7 @@ final class GlobalShortcutCoordinator: ObservableObject {
     private var longPressRecognizers: [ComposedWindowControlID: HotKeyLongPressRecognizer] = [:]
     private var capsLongPressIDs: Set<ComposedWindowControlID> = []
     private var remappingActivationObserver: NSObjectProtocol?
+    private let capsInputSourceSwitcher = CapsInputSourceSwitcher()
     private lazy var remappingMonitor = KeyboardRemappingMonitor(
         availableCapsKeys: { [weak self] in self?.capsShortcutKeys ?? [] },
         perform: { [weak self] action in self?.handleRemappingAction(action) }
@@ -122,6 +123,7 @@ final class GlobalShortcutCoordinator: ObservableObject {
 
     private func refreshKeyboardRemapping() {
         let rules = settings.keyboardRemappingRules
+        if rules.contains(.capsShortcuts) { capsInputSourceSwitcher.rememberCurrent() }
         guard !rules.isEmpty else {
             remappingMonitor.stop()
             keyboardRemappingError = nil
@@ -211,6 +213,12 @@ final class GlobalShortcutCoordinator: ObservableObject {
                         self?.keyboardRemappingError = message
                     }
                 }
+            }
+        case .switchInputSource:
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.remappingMonitor.isRunning,
+                      self.settings.keyboardRemappingRules.contains(.capsShortcuts) else { return }
+                self.keyboardRemappingError = self.capsInputSourceSwitcher.toggle()
             }
         case let .shortcutDown(code):
             routeCapsShortcut(code, pressed: true)
