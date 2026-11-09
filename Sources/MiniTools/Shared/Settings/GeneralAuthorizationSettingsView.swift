@@ -10,13 +10,13 @@ struct GeneralAuthorizationSettingsView: View {
     var body: some View {
         Section {
             permissionRow(
-                title: "辅助功能", subtitle: "用于窗口调整、Safari 窗口和粘贴操作",
+                title: "辅助功能", subtitle: "用于窗口调整、Safari 窗口、粘贴和键盘映射",
                 granted: accessibilityGranted, pane: "Privacy_Accessibility"
             ) {
                 _ = AccessibilityAuthorization.requestPermission()
             }
             permissionRow(
-                title: "输入监控", subtitle: "用于鼠标侧键操作",
+                title: "输入监控", subtitle: "用于鼠标侧键和键盘映射",
                 granted: inputMonitoringGranted, pane: "Privacy_ListenEvent"
             ) {
                 _ = CGRequestListenEventAccess()
