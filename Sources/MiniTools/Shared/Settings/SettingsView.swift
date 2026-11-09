@@ -263,6 +263,7 @@ private struct SettingsCategoryDetail: View {
         }
     }
 
+    @ViewBuilder
     private var keyboardRemappingSettings: some View {
         Section {
             ForEach(KeyboardRemappingRule.allCases) { rule in
