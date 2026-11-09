@@ -21,6 +21,36 @@ enum KeyboardRemappingRule: String, CaseIterable, Identifiable {
     }
 }
 
+/// The Caps Lock flagsChanged event carries the new latch value. A HID callback
+/// may run after that value has already changed, so reading HID on key-down
+/// cannot reliably recover the state from before the press.
+struct CapsLockLatchState {
+    private(set) var original: Bool?
+
+    mutating func observedChange(to newValue: Bool) -> Bool {
+        if original == nil { original = !newValue }
+        return original!
+    }
+
+    mutating func released() -> Bool? {
+        defer { original = nil }
+        return original
+    }
+
+    mutating func cancel() -> Bool? {
+        defer { original = nil }
+        return original
+    }
+}
+
+enum CapsInputSourceChoice {
+    static func target(current: String, ascii: String, previous: String?) -> String? {
+        if current != ascii { return ascii }
+        guard let previous, previous != ascii else { return nil }
+        return previous
+    }
+}
+
 struct KeyboardRemappingState {
     struct Modifiers: OptionSet {
         let rawValue: UInt8
@@ -34,6 +64,7 @@ struct KeyboardRemappingState {
         case sendGrave(Modifiers)
         case hideSafari
         case openCodex
+        case switchInputSource
         case shortcutDown(UInt16)
         case shortcutUp(UInt16)
         case cancelShortcuts
@@ -84,7 +115,7 @@ struct KeyboardRemappingState {
         let used = capsUsed
         capsUsed = false
         // Do not turn releasing Caps into a short press of a held layout key.
-        return (used, used ? [.cancelShortcuts] : [])
+        return (used, used ? [.cancelShortcuts] : [.switchInputSource])
     }
 
     mutating func keyDown(

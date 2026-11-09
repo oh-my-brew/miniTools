@@ -53,7 +53,7 @@ final class KeyboardRemappingStateTests: XCTestCase {
         XCTAssertEqual(state.capsChanged(down: false).actions, [.cancelShortcuts])
         XCTAssertTrue(state.keyUp(UInt16(kVK_ANSI_J)).consume)
         XCTAssertFalse(state.capsChanged(down: true).used)
-        XCTAssertFalse(state.capsChanged(down: false).used)
+        XCTAssertEqual(state.capsChanged(down: false).actions, [.switchInputSource])
     }
 
     func testCapsPrefixReleasesHeldKeyBeforeCaps() {
@@ -66,6 +66,51 @@ final class KeyboardRemappingStateTests: XCTestCase {
         XCTAssertEqual(state.keyUp(UInt16(kVK_ANSI_J)).actions,
                        [.shortcutUp(UInt16(kVK_ANSI_J))])
         XCTAssertTrue(state.capsChanged(down: false).used)
+    }
+
+    func testCapsLatchStaysUnchangedThroughHeldShortcutInBothDirections() {
+        for original in [false, true] {
+            var latch = CapsLockLatchState()
+            var keys = KeyboardRemappingState()
+            keys.enabled = [.capsShortcuts]
+            keys.availableCapsKeys = [UInt16(kVK_ANSI_J)]
+            _ = keys.capsChanged(down: true)
+            // By the time HID reports the physical press, the system may already
+            // have toggled. The flagsChanged transition still identifies the old state.
+            XCTAssertEqual(latch.observedChange(to: !original), original)
+            XCTAssertEqual(keys.keyDown(UInt16(kVK_ANSI_J), modifiers: [],
+                                        isRepeat: false, safariFrontmost: false).actions,
+                           [.shortcutDown(UInt16(kVK_ANSI_J))])
+            XCTAssertEqual(latch.observedChange(to: !original), original)
+            XCTAssertTrue(keys.keyDown(UInt16(kVK_ANSI_J), modifiers: [],
+                                       isRepeat: true, safariFrontmost: false).consume)
+            _ = keys.keyUp(UInt16(kVK_ANSI_J))
+            XCTAssertTrue(keys.capsChanged(down: false).used)
+            XCTAssertEqual(latch.released(), original)
+        }
+    }
+
+    func testCapsLatchPreservesCaseOnLoneTapAndDoesNotGuessWithoutSystemEvent() {
+        var latch = CapsLockLatchState()
+        XCTAssertEqual(latch.observedChange(to: true), false)
+        XCTAssertEqual(latch.released(), false)
+        XCTAssertEqual(latch.observedChange(to: false), true)
+        XCTAssertEqual(latch.released(), true)
+        XCTAssertNil(latch.released())
+        // A late system event can still reveal the state before a fast tap.
+        XCTAssertEqual(latch.observedChange(to: true), false)
+        XCTAssertEqual(latch.cancel(), false)
+    }
+
+    func testCapsTapInputSourceChoiceKeepsTheExactPreviouslySelectedMethod() {
+        let abc = "com.apple.keylayout.ABC"
+        let doubao = "com.bytedance.inputmethod.doubaoime.pinyin"
+        XCTAssertEqual(CapsInputSourceChoice.target(current: doubao, ascii: abc, previous: nil),
+                       abc)
+        XCTAssertEqual(CapsInputSourceChoice.target(current: abc, ascii: abc, previous: doubao),
+                       doubao)
+        XCTAssertNil(CapsInputSourceChoice.target(current: abc, ascii: abc, previous: nil))
+        XCTAssertNil(CapsInputSourceChoice.target(current: abc, ascii: abc, previous: abc))
     }
 
     func testDoubleRightCommandDoesNotStealNormalChord() {

@@ -33,8 +33,8 @@ private let miniToolsCapsValueCallback: IOHIDValueCallback = {
     }
 }
 
-/// The system's Caps Lock latch is independent of its physical key-up. Reading and
-/// restoring it lets a lone tap remain Caps Lock without turning a chord into Caps Lock.
+/// A Caps Lock press may toggle the system latch before the HID callback runs.
+/// Restore its prior state for both a lone tap and a shortcut chord.
 private final class CapsLockSystemState {
     private var connection: io_connect_t = 0
 
@@ -76,8 +76,9 @@ final class KeyboardRemappingMonitor {
     private var eventSource: CFRunLoopSource?
     private var hidManager: IOHIDManager?
     private var capsSystem: CapsLockSystemState?
-    private var capsOriginalState: Bool?
+    private var capsLatch = CapsLockLatchState()
     private var capsWasReleased = false
+    private var capsNeedsLateRestore = false
     private var capsPhysicalHeld = false
     private(set) var capsAvailable = false
     private static let postedMarker: Int64 = 0x4D54_524D_4150
@@ -135,7 +136,7 @@ final class KeyboardRemappingMonitor {
         }
         eventTap = nil
         eventSource = nil
-        if let original = capsOriginalState {
+        if let original = capsLatch.cancel() {
             _ = capsSystem?.set(original)
         }
         if let hidManager {
@@ -144,8 +145,8 @@ final class KeyboardRemappingMonitor {
         }
         hidManager = nil
         capsSystem = nil
-        capsOriginalState = nil
         capsWasReleased = false
+        capsNeedsLateRestore = false
         capsPhysicalHeld = false
         capsAvailable = false
         state.reset()
@@ -176,21 +177,24 @@ final class KeyboardRemappingMonitor {
     fileprivate func handleCapsChanged(down: Bool) {
         capsPhysicalHeld = down
         capsWasReleased = !down
-        if down, capsOriginalState == nil {
-            capsOriginalState = capsSystem?.read()
-        }
+        if down { capsNeedsLateRestore = false }
         let outcome = state.capsChanged(down: down)
         for action in outcome.actions { perform(action) }
-        if !down, let original = capsOriginalState {
-            // Physical Caps Lock may have toggled before the event tap observes it.
-            // Preserve a lone tap; a chord restores the previous latch state.
-            _ = capsSystem?.set(outcome.used ? original : !original)
-            capsOriginalState = nil
+        if !down {
+            if let target = capsLatch.released() {
+                // Input source switching is separate from the Caps Lock latch.
+                _ = capsSystem?.set(target)
+            } else {
+                // HID release can arrive before the corresponding session event.
+                capsNeedsLateRestore = true
+            }
         }
     }
 
     fileprivate func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let original = capsLatch.cancel() { _ = capsSystem?.set(original) }
+            capsNeedsLateRestore = false
             state.reset()
             perform(.cancelShortcuts)
             if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: true) }
@@ -212,14 +216,20 @@ final class KeyboardRemappingMonitor {
                 // is reconciled on release, without forwarding a Caps modifier.
                 if capsWasReleased {
                     capsWasReleased = false
+                    if capsNeedsLateRestore {
+                        let original = capsLatch.observedChange(
+                            to: event.flags.contains(.maskAlphaShift)
+                        )
+                        _ = capsSystem?.set(original)
+                        _ = capsLatch.cancel()
+                        capsNeedsLateRestore = false
+                    }
                     return nil
                 }
-                if capsOriginalState == nil {
-                    capsOriginalState = !event.flags.contains(.maskAlphaShift)
-                }
-                if let original = capsOriginalState {
-                    _ = capsSystem?.set(original)
-                }
+                let original = capsLatch.observedChange(
+                    to: event.flags.contains(.maskAlphaShift)
+                )
+                _ = capsSystem?.set(original)
                 return nil
             } else {
                 state.otherModifierChanged()
