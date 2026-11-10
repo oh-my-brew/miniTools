@@ -219,7 +219,7 @@ final class KeyboardRemappingMonitor {
                 }
                 return nil
             } else {
-                state.otherModifierChanged()
+                state.otherModifierChanged(code)
             }
             return Unmanaged.passUnretained(event)
         }
