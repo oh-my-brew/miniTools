@@ -199,14 +199,17 @@ final class KeyboardRemappingStateTests: XCTestCase {
         XCTAssertFalse(keys.keyDown(f, modifiers: [], isRepeat: false,
                                      safariFrontmost: false).consume)
         XCTAssertFalse(keys.keyUp(f).consume)
-        XCTAssertEqual(keys.capsChanged(down: false), [.cancelShortcuts])
+        XCTAssertEqual(keys.capsChanged(down: false),
+                       [.cancelShortcuts, .capsTapBlocked(.otherKey)])
 
         _ = keys.capsChanged(down: true)
         keys.otherModifierChanged()
-        XCTAssertEqual(keys.capsChanged(down: false), [.cancelShortcuts])
+        XCTAssertEqual(keys.capsChanged(down: false),
+                       [.cancelShortcuts, .capsTapBlocked(.modifierChanged)])
 
         _ = keys.capsChanged(down: true, modifiersHeld: true)
-        XCTAssertEqual(keys.capsChanged(down: false), [.cancelShortcuts])
+        XCTAssertEqual(keys.capsChanged(down: false),
+                       [.cancelShortcuts, .capsTapBlocked(.heldModifier)])
     }
 
     func testCapsShortcutAndInputSourceSwitchAreIndependent() {
@@ -217,13 +220,15 @@ final class KeyboardRemappingStateTests: XCTestCase {
         XCTAssertEqual(keys.keyDown(UInt16(kVK_ANSI_J), modifiers: [], isRepeat: false,
                                     safariFrontmost: false).actions,
                        [.shortcutDown(UInt16(kVK_ANSI_J))])
-        XCTAssertEqual(keys.capsChanged(down: false), [.cancelShortcuts])
+        XCTAssertEqual(keys.capsChanged(down: false),
+                       [.cancelShortcuts, .capsTapBlocked(.otherKey)])
         _ = keys.capsChanged(down: true)
         XCTAssertEqual(keys.capsChanged(down: false), [.cancelShortcuts, .switchInputSource])
 
         _ = keys.capsChanged(down: true)
         _ = keys.rightCommandChanged(down: true, at: 1)
-        XCTAssertEqual(keys.capsChanged(down: false), [.cancelShortcuts])
+        XCTAssertEqual(keys.capsChanged(down: false),
+                       [.cancelShortcuts, .capsTapBlocked(.modifierChanged)])
         keys.reset()
         XCTAssertTrue(keys.capsChanged(down: false).isEmpty)
     }
