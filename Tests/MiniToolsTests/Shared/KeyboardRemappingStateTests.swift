@@ -42,7 +42,7 @@ final class KeyboardRemappingStateTests: XCTestCase {
         var state = KeyboardRemappingState()
         state.enabled = [.capsShortcuts]
         state.availableCapsKeys = [UInt16(kVK_ANSI_J)]
-        XCTAssertFalse(state.capsChanged(down: true).used)
+        XCTAssertTrue(state.capsChanged(down: true).isEmpty)
         XCTAssertFalse(state.keyDown(UInt16(kVK_ANSI_X), modifiers: [], isRepeat: false,
                                      safariFrontmost: false).consume)
         XCTAssertEqual(state.keyDown(UInt16(kVK_ANSI_J), modifiers: [], isRepeat: false,
@@ -50,10 +50,10 @@ final class KeyboardRemappingStateTests: XCTestCase {
                        [.shortcutDown(UInt16(kVK_ANSI_J))])
         XCTAssertTrue(state.keyDown(UInt16(kVK_ANSI_J), modifiers: [], isRepeat: true,
                                      safariFrontmost: false).consume)
-        XCTAssertEqual(state.capsChanged(down: false).actions, [.cancelShortcuts])
+        XCTAssertEqual(state.capsChanged(down: false), [.cancelShortcuts])
         XCTAssertTrue(state.keyUp(UInt16(kVK_ANSI_J)).consume)
-        XCTAssertFalse(state.capsChanged(down: true).used)
-        XCTAssertEqual(state.capsChanged(down: false).actions, [.switchInputSource])
+        XCTAssertTrue(state.capsChanged(down: true).isEmpty)
+        XCTAssertEqual(state.capsChanged(down: false), [.cancelShortcuts])
     }
 
     func testCapsPrefixReleasesHeldKeyBeforeCaps() {
@@ -65,7 +65,7 @@ final class KeyboardRemappingStateTests: XCTestCase {
                           safariFrontmost: false)
         XCTAssertEqual(state.keyUp(UInt16(kVK_ANSI_J)).actions,
                        [.shortcutUp(UInt16(kVK_ANSI_J))])
-        XCTAssertTrue(state.capsChanged(down: false).used)
+        XCTAssertEqual(state.capsChanged(down: false), [.cancelShortcuts])
     }
 
     func testControlMappingsRequireExactHyperChordAndEnabledRule() {
@@ -101,7 +101,7 @@ final class KeyboardRemappingStateTests: XCTestCase {
         }
     }
 
-    func testCapsControlMappingPreservesInputSourceAndMiniToolsShortcutPriority() {
+    func testCapsControlMappingAndMiniToolsShortcutPriority() {
         let code = UInt16(kVK_ANSI_M)
         var state = KeyboardRemappingState()
         state.enabled = [.capsShortcuts, .homerowControlShortcuts]
@@ -109,7 +109,7 @@ final class KeyboardRemappingStateTests: XCTestCase {
         XCTAssertEqual(state.keyDown(code, modifiers: [], isRepeat: false,
                                      safariFrontmost: false).actions, [.sendControlShortcut(code)])
         XCTAssertTrue(state.keyUp(code).consume)
-        XCTAssertEqual(state.capsChanged(down: false).actions, [.cancelShortcuts])
+        XCTAssertEqual(state.capsChanged(down: false), [.cancelShortcuts])
 
         state.availableCapsKeys = [code]
         _ = state.capsChanged(down: true)
@@ -138,7 +138,7 @@ final class KeyboardRemappingStateTests: XCTestCase {
             XCTAssertTrue(keys.keyDown(UInt16(kVK_ANSI_J), modifiers: [],
                                        isRepeat: true, safariFrontmost: false).consume)
             _ = keys.keyUp(UInt16(kVK_ANSI_J))
-            XCTAssertTrue(keys.capsChanged(down: false).used)
+            XCTAssertEqual(keys.capsChanged(down: false), [.cancelShortcuts])
             XCTAssertEqual(latch.released(), original)
         }
     }
@@ -155,15 +155,57 @@ final class KeyboardRemappingStateTests: XCTestCase {
         XCTAssertEqual(latch.cancel(), false)
     }
 
-    func testCapsTapInputSourceChoiceKeepsTheExactPreviouslySelectedMethod() {
-        let abc = "com.apple.keylayout.ABC"
-        let doubao = "com.bytedance.inputmethod.doubaoime.pinyin"
-        XCTAssertEqual(CapsInputSourceChoice.target(current: doubao, ascii: abc, previous: nil),
-                       abc)
-        XCTAssertEqual(CapsInputSourceChoice.target(current: abc, ascii: abc, previous: doubao),
-                       doubao)
-        XCTAssertNil(CapsInputSourceChoice.target(current: abc, ascii: abc, previous: nil))
-        XCTAssertNil(CapsInputSourceChoice.target(current: abc, ascii: abc, previous: abc))
+    func testCapsTapHasNoInputSourceActionAndUnassignedKeysPassThrough() {
+        var keys = KeyboardRemappingState()
+        keys.enabled = [.capsShortcuts]
+        XCTAssertTrue(keys.capsChanged(down: true).isEmpty)
+        let unassigned = UInt16(kVK_ANSI_F)
+        XCTAssertFalse(keys.keyDown(unassigned, modifiers: [], isRepeat: false,
+                                     safariFrontmost: false).consume)
+        XCTAssertFalse(keys.keyUp(unassigned).consume)
+        XCTAssertEqual(keys.capsChanged(down: false), [.cancelShortcuts])
+        XCTAssertTrue(keys.capsChanged(down: false).isEmpty)
+    }
+
+    func testCapsOnlyTriggersEnabledHomerowAndGhosttyMappings() {
+        for (rule, codes) in [
+            (KeyboardRemappingRule.homerowControlShortcuts,
+             [kVK_ANSI_M, kVK_ANSI_Comma, kVK_ANSI_Period]),
+            (.ghosttyControlShortcut, [kVK_ANSI_Slash])
+        ] {
+            for rawCode in codes {
+                let code = UInt16(rawCode)
+                var keys = KeyboardRemappingState()
+                keys.enabled = [.capsShortcuts]
+                _ = keys.capsChanged(down: true)
+                XCTAssertFalse(keys.keyDown(code, modifiers: [], isRepeat: false,
+                                             safariFrontmost: false).consume)
+                XCTAssertFalse(keys.keyUp(code).consume)
+                _ = keys.capsChanged(down: false)
+
+                keys.enabled.insert(rule)
+                _ = keys.capsChanged(down: true)
+                XCTAssertEqual(keys.keyDown(code, modifiers: [], isRepeat: false,
+                                             safariFrontmost: false).actions,
+                               [.sendControlShortcut(code)])
+                XCTAssertTrue(keys.keyUp(code).consume)
+                _ = keys.capsChanged(down: false)
+            }
+        }
+    }
+
+    func testCapsChordDoesNotRunEscapeOrSafariHideMappings() {
+        var state = KeyboardRemappingState()
+        state.enabled = [.capsShortcuts, .commandEscape, .shiftEscape, .safariHide]
+        _ = state.capsChanged(down: true)
+        XCTAssertFalse(state.keyDown(UInt16(kVK_Escape), modifiers: .command,
+                                     isRepeat: false, safariFrontmost: false).consume)
+        XCTAssertFalse(state.keyDown(UInt16(kVK_ANSI_Q), modifiers: .command,
+                                     isRepeat: false, safariFrontmost: true).consume)
+        _ = state.capsChanged(down: false)
+        XCTAssertEqual(state.keyDown(UInt16(kVK_Escape), modifiers: .command,
+                                     isRepeat: false, safariFrontmost: false).actions,
+                       [.sendGrave(.command)])
     }
 
     func testDoubleRightCommandDoesNotStealNormalChord() {
