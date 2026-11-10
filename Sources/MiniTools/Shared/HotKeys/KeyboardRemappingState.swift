@@ -17,7 +17,7 @@ enum KeyboardRemappingRule: String, CaseIterable, Identifiable {
         case .commandEscape: "⌘Esc → ⌘`"
         case .shiftEscape: "⇧Esc → ⇧`"
         case .safariHide: "Safari：⌘Q → 隐藏"
-        case .capsShortcuts: "Caps Lock → miniTools 快捷键"
+        case .capsShortcuts: "Caps Lock → miniTools / 已启用映射"
         case .doubleRightCommand: "双击右 Command → Codex"
         case .homerowControlShortcuts: "Homerow：⌃⌥⇧⌘ M / , / . → ⌃ M / , / ."
         case .ghosttyControlShortcut: "Ghostty：⌃⌥⇧⌘ / → ⌃ /"
@@ -55,14 +55,6 @@ struct CapsLockLatchState {
     }
 }
 
-enum CapsInputSourceChoice {
-    static func target(current: String, ascii: String, previous: String?) -> String? {
-        if current != ascii { return ascii }
-        guard let previous, previous != ascii else { return nil }
-        return previous
-    }
-}
-
 struct KeyboardRemappingState {
     struct Modifiers: OptionSet {
         let rawValue: UInt8
@@ -70,13 +62,13 @@ struct KeyboardRemappingState {
         static let shift = Self(rawValue: 1 << 1)
         static let option = Self(rawValue: 1 << 2)
         static let control = Self(rawValue: 1 << 3)
+        static let hyper: Self = [.command, .shift, .option, .control]
     }
 
     enum Action: Equatable {
         case sendGrave(Modifiers)
         case hideSafari
         case openCodex
-        case switchInputSource
         case shortcutDown(UInt16)
         case shortcutUp(UInt16)
         case cancelShortcuts
@@ -96,7 +88,6 @@ struct KeyboardRemappingState {
     var enabled: Set<KeyboardRemappingRule> = []
     var availableCapsKeys: Set<UInt16> = []
     private var capsHeld = false
-    private var capsUsed = false
     private var consumedCapsKeys: Set<UInt16> = []
     private var consumedKeyUps: Set<UInt16> = []
     private var rightCommandHeld = false
@@ -105,7 +96,6 @@ struct KeyboardRemappingState {
 
     mutating func reset() {
         capsHeld = false
-        capsUsed = false
         consumedCapsKeys.removeAll()
         consumedKeyUps.removeAll()
         rightCommandHeld = false
@@ -114,21 +104,18 @@ struct KeyboardRemappingState {
     }
 
     /// HID reports the physical Caps Lock key, independently of its latched modifier flag.
-    /// Returns true when this press was used as a miniTools prefix.
-    mutating func capsChanged(down: Bool) -> (used: Bool, actions: [Action]) {
-        guard enabled.contains(.capsShortcuts) else { return (false, []) }
+    /// Caps is a modifier only: a lone press has no action.
+    mutating func capsChanged(down: Bool) -> [Action] {
+        guard enabled.contains(.capsShortcuts) else { return [] }
         if down {
-            guard !capsHeld else { return (false, []) }
+            guard !capsHeld else { return [] }
             capsHeld = true
-            capsUsed = false
-            return (false, [])
+            return []
         }
-        guard capsHeld else { return (false, []) }
+        guard capsHeld else { return [] }
         capsHeld = false
-        let used = capsUsed
-        capsUsed = false
         // Do not turn releasing Caps into a short press of a held layout key.
-        return (used, used ? [.cancelShortcuts] : [.switchInputSource])
+        return [.cancelShortcuts]
     }
 
     mutating func keyDown(
@@ -142,24 +129,22 @@ struct KeyboardRemappingState {
         if consumedCapsKeys.contains(code) || consumedKeyUps.contains(code) {
             return .handled()
         }
-        if capsHeld { capsUsed = true }
         if capsHeld, enabled.contains(.capsShortcuts),
            availableCapsKeys.contains(code),
            modifiers.isDisjoint(with: [.command, .option, .control]) {
-            capsUsed = true
             consumedCapsKeys.insert(code)
             return .handled(isRepeat ? nil : .shortcutDown(code))
         }
         let capsChord = capsHeld && enabled.contains(.capsShortcuts)
             && modifiers.isDisjoint(with: [.command, .option, .control])
-        let hyperChord = modifiers == [.command, .shift, .option, .control]
+        let hyperChord = modifiers == .hyper
         if (capsChord || hyperChord),
            !availableCapsKeys.contains(code),
            KeyboardRemappingRule.controlShortcut(for: code, enabled: enabled) {
             consumedKeyUps.insert(code)
             return .handled(isRepeat ? nil : .sendControlShortcut(code))
         }
-        if code == UInt16(kVK_Escape) {
+        if !capsHeld, code == UInt16(kVK_Escape) {
             if enabled.contains(.commandEscape),
                modifiers.contains(.command),
                modifiers.isDisjoint(with: [.option, .control]) {
@@ -173,7 +158,7 @@ struct KeyboardRemappingState {
                 return .handled(isRepeat ? nil : .sendGrave(.shift))
             }
         }
-        if enabled.contains(.safariHide), safariFrontmost,
+        if !capsHeld, enabled.contains(.safariHide), safariFrontmost,
            code == UInt16(kVK_ANSI_Q), modifiers == [.command] {
             consumedKeyUps.insert(code)
             return .handled(isRepeat ? nil : .hideSafari)
