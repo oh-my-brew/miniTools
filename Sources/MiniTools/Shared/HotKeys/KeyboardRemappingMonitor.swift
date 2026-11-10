@@ -77,6 +77,8 @@ final class KeyboardRemappingMonitor {
     private var hidManager: IOHIDManager?
     private var capsSystem: CapsLockSystemState?
     private var capsLatch = CapsLockLatchState()
+    private var capsSwitchGate = CapsInputSwitchGate()
+    private var capsSwitchGeneration = 0
     private var capsPhysicalHeld = false
     private(set) var capsAvailable = false
     private static let postedMarker: Int64 = 0x4D54_524D_4150
@@ -129,6 +131,8 @@ final class KeyboardRemappingMonitor {
     }
 
     func stop() {
+        capsSwitchGeneration += 1
+        capsSwitchGate.cancel()
         if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: false) }
         if let eventSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), eventSource, .commonModes)
@@ -174,6 +178,11 @@ final class KeyboardRemappingMonitor {
     fileprivate func handleCapsChanged(down: Bool) {
         capsPhysicalHeld = down
         if down {
+            if capsSwitchGate.isPending {
+                capsSwitchGate.cancel()
+                capsSwitchGeneration += 1
+                perform(.capsTapBlocked(.latchNotRestored))
+            }
             capsLatch.pressed()
             if enabled.contains(.capsInputSourceSwitch) { perform(.capsPressObserved) }
         }
@@ -181,17 +190,31 @@ final class KeyboardRemappingMonitor {
         let chord = !modifiers.isDisjoint(
             with: [.maskCommand, .maskShift, .maskAlternate, .maskControl]
         )
-        for action in state.capsChanged(down: down, modifiersHeld: chord) { perform(action) }
+        let actions = state.capsChanged(down: down, modifiersHeld: chord)
+        for action in actions where action != .switchInputSource { perform(action) }
         if !down {
-            if let target = capsLatch.released() {
-                // Keep the original Caps Lock latch without changing the input source.
-                _ = capsSystem?.set(target)
+            let restored = capsLatch.released().flatMap { capsSystem?.set($0) } ?? false
+            if capsSwitchGate.released(
+                shouldSwitch: actions.contains(.switchInputSource), latchRestored: restored
+            ) {
+                perform(.switchInputSource)
+            } else if capsSwitchGate.isPending {
+                capsSwitchGeneration += 1
+                let generation = capsSwitchGeneration
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    guard let self, generation == self.capsSwitchGeneration,
+                          self.capsSwitchGate.isPending else { return }
+                    self.capsSwitchGate.cancel()
+                    self.perform(.capsTapBlocked(.latchNotRestored))
+                }
             }
         }
     }
 
     fileprivate func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            capsSwitchGeneration += 1
+            capsSwitchGate.cancel()
             if let original = capsLatch.cancel() { _ = capsSystem?.set(original) }
             state.reset()
             perform(.cancelShortcuts)
@@ -215,7 +238,10 @@ final class KeyboardRemappingMonitor {
                 if let original = capsLatch.observedChange(
                     to: event.flags.contains(.maskAlphaShift)
                 ) {
-                    _ = capsSystem?.set(original)
+                    if capsSystem?.set(original) == true, capsSwitchGate.latchRestored() {
+                        capsSwitchGeneration += 1
+                        perform(.switchInputSource)
+                    }
                 }
                 return nil
             } else {
