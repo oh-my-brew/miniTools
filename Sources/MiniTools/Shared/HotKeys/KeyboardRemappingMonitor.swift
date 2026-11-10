@@ -97,10 +97,11 @@ final class KeyboardRemappingMonitor {
         if isRunning { return true }
         stop()
         var activeRules = enabled
-        if enabled.contains(.capsShortcuts) {
+        if enabled.contains(.capsShortcuts) || enabled.contains(.capsInputSourceSwitch) {
             capsAvailable = startCapsMonitor()
             if !capsAvailable {
                 activeRules.remove(.capsShortcuts)
+                activeRules.remove(.capsInputSourceSwitch)
             }
         }
         guard !activeRules.isEmpty else { return false }
@@ -173,7 +174,11 @@ final class KeyboardRemappingMonitor {
     fileprivate func handleCapsChanged(down: Bool) {
         capsPhysicalHeld = down
         if down { capsLatch.pressed() }
-        for action in state.capsChanged(down: down) { perform(action) }
+        let modifiers = CGEventSource.flagsState(.combinedSessionState)
+        let chord = !modifiers.isDisjoint(
+            with: [.maskCommand, .maskShift, .maskAlternate, .maskControl]
+        )
+        for action in state.capsChanged(down: down, modifiersHeld: chord) { perform(action) }
         if !down {
             if let target = capsLatch.released() {
                 // Keep the original Caps Lock latch without changing the input source.

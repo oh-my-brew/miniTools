@@ -6,6 +6,7 @@ enum KeyboardRemappingRule: String, CaseIterable, Identifiable {
     case shiftEscape
     case safariHide
     case capsShortcuts
+    case capsInputSourceSwitch
     case doubleRightCommand
     case homerowControlShortcuts
     case ghosttyControlShortcut
@@ -18,6 +19,7 @@ enum KeyboardRemappingRule: String, CaseIterable, Identifiable {
         case .shiftEscape: "⇧Esc → ⇧`"
         case .safariHide: "Safari：⌘Q → 隐藏"
         case .capsShortcuts: "Caps Lock → miniTools / 已启用映射"
+        case .capsInputSourceSwitch: "单按 Caps Lock → 切换输入法"
         case .doubleRightCommand: "双击右 Command → Codex"
         case .homerowControlShortcuts: "Homerow：Caps Lock / ⌃⌥⇧⌘ + M、,、. → ⌃+同键"
         case .ghosttyControlShortcut: "Ghostty：Caps Lock / ⌃⌥⇧⌘ + / → ⌃/"
@@ -30,6 +32,14 @@ enum KeyboardRemappingRule: String, CaseIterable, Identifiable {
             return true
         }
         return enabled.contains(.ghosttyControlShortcut) && code == UInt16(kVK_ANSI_Slash)
+    }
+}
+
+enum CapsInputSourceChoice {
+    static func target(current: String, ascii: String, previous: String?) -> String? {
+        if current != ascii { return ascii }
+        guard let previous, previous != ascii else { return nil }
+        return previous
     }
 }
 
@@ -90,6 +100,7 @@ struct KeyboardRemappingState {
         case sendGrave(Modifiers)
         case hideSafari
         case openCodex
+        case switchInputSource
         case shortcutDown(UInt16)
         case shortcutUp(UInt16)
         case cancelShortcuts
@@ -109,6 +120,7 @@ struct KeyboardRemappingState {
     var enabled: Set<KeyboardRemappingRule> = []
     var availableCapsKeys: Set<UInt16> = []
     private var capsHeld = false
+    private var capsUsed = false
     private var consumedCapsKeys: Set<UInt16> = []
     private var consumedKeyUps: Set<UInt16> = []
     private var rightCommandHeld = false
@@ -117,6 +129,7 @@ struct KeyboardRemappingState {
 
     mutating func reset() {
         capsHeld = false
+        capsUsed = false
         consumedCapsKeys.removeAll()
         consumedKeyUps.removeAll()
         rightCommandHeld = false
@@ -125,18 +138,22 @@ struct KeyboardRemappingState {
     }
 
     /// HID reports the physical Caps Lock key, independently of its latched modifier flag.
-    /// Caps is a modifier only: a lone press has no action.
-    mutating func capsChanged(down: Bool) -> [Action] {
-        guard enabled.contains(.capsShortcuts) else { return [] }
+    mutating func capsChanged(down: Bool, modifiersHeld: Bool = false) -> [Action] {
+        guard enabled.contains(.capsShortcuts) || enabled.contains(.capsInputSourceSwitch) else {
+            return []
+        }
         if down {
             guard !capsHeld else { return [] }
             capsHeld = true
+            capsUsed = modifiersHeld
             return []
         }
         guard capsHeld else { return [] }
         capsHeld = false
+        let shouldSwitch = enabled.contains(.capsInputSourceSwitch) && !capsUsed
+        capsUsed = false
         // Do not turn releasing Caps into a short press of a held layout key.
-        return [.cancelShortcuts]
+        return shouldSwitch ? [.cancelShortcuts, .switchInputSource] : [.cancelShortcuts]
     }
 
     mutating func keyDown(
@@ -147,6 +164,7 @@ struct KeyboardRemappingState {
     ) -> Result {
         rightCommandChord = true
         previousRightCommandRelease = nil
+        if capsHeld { capsUsed = true }
         if consumedCapsKeys.contains(code) || consumedKeyUps.contains(code) {
             return .handled()
         }
@@ -199,6 +217,7 @@ struct KeyboardRemappingState {
 
     /// Do not intercept either Command event: ordinary right Command chords still work.
     mutating func rightCommandChanged(down: Bool, at time: TimeInterval) -> Result {
+        if capsHeld { capsUsed = true }
         guard enabled.contains(.doubleRightCommand) else { return .pass }
         if down {
             guard !rightCommandHeld else { return .pass }
@@ -217,6 +236,7 @@ struct KeyboardRemappingState {
     }
 
     mutating func otherModifierChanged() {
+        if capsHeld { capsUsed = true }
         rightCommandChord = true
         previousRightCommandRelease = nil
     }

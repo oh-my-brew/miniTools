@@ -188,6 +188,19 @@ final class AppSettingsTests: XCTestCase {
     }
 
     @MainActor
+    func testCapsInputSourceSwitchDefaultsOffAndPersistsIndependently() throws {
+        let (defaults, suiteName) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults)
+        XCTAssertFalse(settings.keyboardRemappingRules.contains(.capsInputSourceSwitch))
+        settings.updateKeyboardRemappingRule(.capsShortcuts, enabled: true)
+        settings.updateKeyboardRemappingRule(.capsInputSourceSwitch, enabled: true)
+        settings.updateKeyboardRemappingRule(.capsShortcuts, enabled: false)
+        XCTAssertEqual(AppSettings(defaults: defaults).keyboardRemappingRules,
+                       [.capsInputSourceSwitch])
+    }
+
+    @MainActor
     func testEnablesEveryCursorHighlightStyleByDefault() throws {
         let (defaults, suiteName) = try makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
