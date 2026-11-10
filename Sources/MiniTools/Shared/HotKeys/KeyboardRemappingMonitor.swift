@@ -239,7 +239,6 @@ final class KeyboardRemappingMonitor {
         guard type == .keyDown || type == .keyUp else {
             return Unmanaged.passUnretained(event)
         }
-        if capsPhysicalHeld { state.availableCapsKeys = availableCapsKeys() }
         let result: KeyboardRemappingState.Result
         if type == .keyDown {
             var modifiers: KeyboardRemappingState.Modifiers = []
@@ -247,6 +246,9 @@ final class KeyboardRemappingMonitor {
             if event.flags.contains(.maskShift) { modifiers.insert(.shift) }
             if event.flags.contains(.maskAlternate) { modifiers.insert(.option) }
             if event.flags.contains(.maskControl) { modifiers.insert(.control) }
+            if capsPhysicalHeld || modifiers == [.command, .shift, .option, .control] {
+                state.availableCapsKeys = availableCapsKeys()
+            }
             result = state.keyDown(
                 code,
                 modifiers: modifiers,
@@ -264,14 +266,27 @@ final class KeyboardRemappingMonitor {
     }
 
     static func postGrave(_ modifiers: KeyboardRemappingState.Modifiers) {
+        postShortcut(UInt16(kVK_ANSI_Grave), modifiers: modifiers)
+    }
+
+    static func postControlShortcut(_ code: UInt16) {
+        postShortcut(code, modifiers: .control)
+    }
+
+    private static func postShortcut(
+        _ code: UInt16,
+        modifiers: KeyboardRemappingState.Modifiers
+    ) {
         let source = CGEventSource(stateID: .hidSystemState)
-        guard let down = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_Grave),
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(code),
                                  keyDown: true),
-              let up = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_Grave),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(code),
                                keyDown: false) else { return }
         var flags: CGEventFlags = []
         if modifiers.contains(.command) { flags.insert(.maskCommand) }
         if modifiers.contains(.shift) { flags.insert(.maskShift) }
+        if modifiers.contains(.option) { flags.insert(.maskAlternate) }
+        if modifiers.contains(.control) { flags.insert(.maskControl) }
         down.flags = flags
         up.flags = flags
         down.setIntegerValueField(.eventSourceUserData, value: postedMarker)

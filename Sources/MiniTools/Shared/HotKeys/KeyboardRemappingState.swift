@@ -7,6 +7,8 @@ enum KeyboardRemappingRule: String, CaseIterable, Identifiable {
     case safariHide
     case capsShortcuts
     case doubleRightCommand
+    case homerowControlShortcuts
+    case ghosttyControlShortcut
 
     var id: String { rawValue }
 
@@ -17,7 +19,17 @@ enum KeyboardRemappingRule: String, CaseIterable, Identifiable {
         case .safariHide: "Safari：⌘Q → 隐藏"
         case .capsShortcuts: "Caps Lock → miniTools 快捷键"
         case .doubleRightCommand: "双击右 Command → Codex"
+        case .homerowControlShortcuts: "Homerow：⌃⌥⇧⌘ M / , / . → ⌃ M / , / ."
+        case .ghosttyControlShortcut: "Ghostty：⌃⌥⇧⌘ / → ⌃ /"
         }
+    }
+
+    static func controlShortcut(for code: UInt16, enabled: Set<Self>) -> Bool {
+        if enabled.contains(.homerowControlShortcuts),
+           [kVK_ANSI_M, kVK_ANSI_Comma, kVK_ANSI_Period].contains(Int(code)) {
+            return true
+        }
+        return enabled.contains(.ghosttyControlShortcut) && code == UInt16(kVK_ANSI_Slash)
     }
 }
 
@@ -68,6 +80,7 @@ struct KeyboardRemappingState {
         case shortcutDown(UInt16)
         case shortcutUp(UInt16)
         case cancelShortcuts
+        case sendControlShortcut(UInt16)
     }
 
     struct Result {
@@ -136,6 +149,15 @@ struct KeyboardRemappingState {
             capsUsed = true
             consumedCapsKeys.insert(code)
             return .handled(isRepeat ? nil : .shortcutDown(code))
+        }
+        let capsChord = capsHeld && enabled.contains(.capsShortcuts)
+            && modifiers.isDisjoint(with: [.command, .option, .control])
+        let hyperChord = modifiers == [.command, .shift, .option, .control]
+        if (capsChord || hyperChord),
+           !availableCapsKeys.contains(code),
+           KeyboardRemappingRule.controlShortcut(for: code, enabled: enabled) {
+            consumedKeyUps.insert(code)
+            return .handled(isRepeat ? nil : .sendControlShortcut(code))
         }
         if code == UInt16(kVK_Escape) {
             if enabled.contains(.commandEscape),
