@@ -127,6 +127,7 @@ final class KeyboardRemappingStateTests: XCTestCase {
             var keys = KeyboardRemappingState()
             keys.enabled = [.capsShortcuts]
             keys.availableCapsKeys = [UInt16(kVK_ANSI_J)]
+            latch.pressed()
             _ = keys.capsChanged(down: true)
             // By the time HID reports the physical press, the system may already
             // have toggled. The flagsChanged transition still identifies the old state.
@@ -145,14 +146,30 @@ final class KeyboardRemappingStateTests: XCTestCase {
 
     func testCapsLatchPreservesCaseOnLoneTapAndDoesNotGuessWithoutSystemEvent() {
         var latch = CapsLockLatchState()
+        latch.pressed()
         XCTAssertEqual(latch.observedChange(to: true), false)
         XCTAssertEqual(latch.released(), false)
+        XCTAssertNil(latch.observedChange(to: true))
+        latch.pressed()
         XCTAssertEqual(latch.observedChange(to: false), true)
         XCTAssertEqual(latch.released(), true)
         XCTAssertNil(latch.released())
-        // A late system event can still reveal the state before a fast tap.
+        latch.pressed()
         XCTAssertEqual(latch.observedChange(to: true), false)
         XCTAssertEqual(latch.cancel(), false)
+    }
+
+    func testCapsLatchIgnoresBothSessionEventsAfterPhysicalRelease() {
+        for original in [false, true] {
+            var latch = CapsLockLatchState()
+            latch.pressed()
+            XCTAssertNil(latch.released())
+            XCTAssertEqual(latch.observedChange(to: !original), original)
+            XCTAssertNil(latch.observedChange(to: !original))
+            latch.pressed()
+            XCTAssertEqual(latch.observedChange(to: original), !original)
+            XCTAssertEqual(latch.released(), !original)
+        }
     }
 
     func testCapsTapHasNoInputSourceActionAndUnassignedKeysPassThrough() {
