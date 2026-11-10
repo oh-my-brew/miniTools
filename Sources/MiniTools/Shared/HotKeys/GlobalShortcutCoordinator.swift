@@ -21,6 +21,7 @@ final class GlobalShortcutCoordinator: ObservableObject {
     private var longPressRecognizers: [ComposedWindowControlID: HotKeyLongPressRecognizer] = [:]
     private var capsLongPressIDs: Set<ComposedWindowControlID> = []
     private var remappingActivationObserver: NSObjectProtocol?
+    private let capsInputSourceSwitcher = CapsInputSourceSwitcher()
     private lazy var remappingMonitor = KeyboardRemappingMonitor(
         availableCapsKeys: { [weak self] in self?.capsShortcutKeys ?? [] },
         perform: { [weak self] action in self?.handleRemappingAction(action) }
@@ -122,6 +123,7 @@ final class GlobalShortcutCoordinator: ObservableObject {
 
     private func refreshKeyboardRemapping() {
         let rules = settings.keyboardRemappingRules
+        if rules.contains(.capsInputSourceSwitch) { capsInputSourceSwitcher.rememberCurrent() }
         guard !rules.isEmpty else {
             remappingMonitor.stop()
             keyboardRemappingError = nil
@@ -142,7 +144,8 @@ final class GlobalShortcutCoordinator: ObservableObject {
         remappingMonitor.stop()
         remappingMonitor.enabled = rules
         let running = remappingMonitor.start()
-        if rules.contains(.capsShortcuts), !remappingMonitor.capsAvailable {
+        if !rules.isDisjoint(with: [.capsShortcuts, .capsInputSourceSwitch]),
+           !remappingMonitor.capsAvailable {
             keyboardRemappingError = "Caps Lock 物理按键监听不可用；其他已启用的映射仍可使用"
         } else {
             keyboardRemappingError = running ? nil : "键盘监听不可用，请检查系统授权"
@@ -215,6 +218,14 @@ final class GlobalShortcutCoordinator: ObservableObject {
                         self?.keyboardRemappingError = message
                     }
                 }
+            }
+        case .switchInputSource:
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.remappingMonitor.isRunning,
+                      self.settings.keyboardRemappingRules.contains(.capsInputSourceSwitch) else {
+                    return
+                }
+                self.keyboardRemappingError = self.capsInputSourceSwitcher.toggle()
             }
         case let .shortcutDown(code):
             routeCapsShortcut(code, pressed: true)
