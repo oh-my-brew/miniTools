@@ -184,6 +184,65 @@ final class KeyboardRemappingStateTests: XCTestCase {
         XCTAssertTrue(keys.capsChanged(down: false).isEmpty)
     }
 
+    func testCapsInputSourceSwitchNeedsAnEnabledLoneTap() {
+        var keys = KeyboardRemappingState()
+        XCTAssertTrue(keys.capsChanged(down: true).isEmpty)
+        XCTAssertTrue(keys.capsChanged(down: false).isEmpty)
+
+        keys.enabled = [.capsInputSourceSwitch]
+        XCTAssertTrue(keys.capsChanged(down: true).isEmpty)
+        XCTAssertEqual(keys.capsChanged(down: false), [.cancelShortcuts, .switchInputSource])
+        XCTAssertTrue(keys.capsChanged(down: false).isEmpty)
+
+        _ = keys.capsChanged(down: true)
+        let f = UInt16(kVK_ANSI_F)
+        XCTAssertFalse(keys.keyDown(f, modifiers: [], isRepeat: false,
+                                     safariFrontmost: false).consume)
+        XCTAssertFalse(keys.keyUp(f).consume)
+        XCTAssertEqual(keys.capsChanged(down: false), [.cancelShortcuts])
+
+        _ = keys.capsChanged(down: true)
+        keys.otherModifierChanged()
+        XCTAssertEqual(keys.capsChanged(down: false), [.cancelShortcuts])
+
+        _ = keys.capsChanged(down: true, modifiersHeld: true)
+        XCTAssertEqual(keys.capsChanged(down: false), [.cancelShortcuts])
+    }
+
+    func testCapsShortcutAndInputSourceSwitchAreIndependent() {
+        var keys = KeyboardRemappingState()
+        keys.enabled = [.capsShortcuts, .capsInputSourceSwitch]
+        keys.availableCapsKeys = [UInt16(kVK_ANSI_J)]
+        _ = keys.capsChanged(down: true)
+        XCTAssertEqual(keys.keyDown(UInt16(kVK_ANSI_J), modifiers: [], isRepeat: false,
+                                    safariFrontmost: false).actions,
+                       [.shortcutDown(UInt16(kVK_ANSI_J))])
+        XCTAssertEqual(keys.capsChanged(down: false), [.cancelShortcuts])
+        _ = keys.capsChanged(down: true)
+        XCTAssertEqual(keys.capsChanged(down: false), [.cancelShortcuts, .switchInputSource])
+
+        _ = keys.capsChanged(down: true)
+        _ = keys.rightCommandChanged(down: true, at: 1)
+        XCTAssertEqual(keys.capsChanged(down: false), [.cancelShortcuts])
+        keys.reset()
+        XCTAssertTrue(keys.capsChanged(down: false).isEmpty)
+    }
+
+    func testInputSourceChoiceUsesLastNonASCIIInputSource() {
+        XCTAssertEqual(CapsInputSourceChoice.target(
+            current: "chinese", ascii: "english", previous: nil
+        ), "english")
+        XCTAssertEqual(CapsInputSourceChoice.target(
+            current: "english", ascii: "english", previous: "chinese"
+        ), "chinese")
+        XCTAssertNil(CapsInputSourceChoice.target(
+            current: "english", ascii: "english", previous: nil
+        ))
+        XCTAssertNil(CapsInputSourceChoice.target(
+            current: "english", ascii: "english", previous: "english"
+        ))
+    }
+
     func testCapsOnlyTriggersEnabledHomerowAndGhosttyMappings() {
         for (rule, codes) in [
             (KeyboardRemappingRule.homerowControlShortcuts,
