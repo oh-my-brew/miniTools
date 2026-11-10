@@ -173,7 +173,10 @@ final class KeyboardRemappingMonitor {
 
     fileprivate func handleCapsChanged(down: Bool) {
         capsPhysicalHeld = down
-        if down { capsLatch.pressed() }
+        if down {
+            capsLatch.pressed()
+            if enabled.contains(.capsInputSourceSwitch) { perform(.capsPressObserved) }
+        }
         let modifiers = CGEventSource.flagsState(.combinedSessionState)
         let chord = !modifiers.isDisjoint(
             with: [.maskCommand, .maskShift, .maskAlternate, .maskControl]

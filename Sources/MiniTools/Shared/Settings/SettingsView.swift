@@ -278,6 +278,15 @@ private struct SettingsCategoryDetail: View {
             Text("各项默认关闭。启用前请关闭 Karabiner 中相同的映射。Caps Lock 前缀与单按切换输入法可分别开启：仅单按时在英文布局与上次使用的输入法之间切换，组合键不会切换。启用前须在「系统设置 → 键盘 → 文字输入 → 编辑」关闭系统的 Caps Lock 切换输入法选项；miniTools 不修改系统设置。按住 Caps Lock 可触发 miniTools 快捷键；另行开启 Homerow 或 Ghostty 时，Caps Lock + M、,、.、/ 可发送对应的 Control 组合。")
         }
 
+        if settings.keyboardRemappingRules.contains(.capsInputSourceSwitch),
+           let status = shortcutCoordinator.capsInputSourceStatus {
+            Section {
+                Text(status).textSelection(.enabled)
+            } header: {
+                Text("单按 Caps Lock 诊断")
+            }
+        }
+
         if let error = shortcutCoordinator.keyboardRemappingError {
             Section {
                 Text(error).foregroundStyle(.red)
