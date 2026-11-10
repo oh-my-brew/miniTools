@@ -40,7 +40,7 @@ final class CapsInputSourceSwitcher {
             guard let source = (0..<CFArrayGetCount(enabledSources)).lazy.compactMap({ index -> TISInputSource? in
                 guard let pointer = CFArrayGetValueAtIndex(enabledSources, index) else { return nil }
                 let candidate = Unmanaged<TISInputSource>.fromOpaque(pointer).takeUnretainedValue()
-                return identifier(of: candidate) == target ? candidate : nil
+                return self.identifier(of: candidate) == target ? candidate : nil
             }).first else {
                 return "原输入法已不可用，请先手动选择一种输入法"
             }
