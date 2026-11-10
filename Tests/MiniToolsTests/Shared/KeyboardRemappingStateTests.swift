@@ -172,6 +172,41 @@ final class KeyboardRemappingStateTests: XCTestCase {
         }
     }
 
+    func testCapsInputSwitchWaitsForLateSessionEventAndSuccessfulLatchRestore() {
+        for original in [false, true] {
+            var latch = CapsLockLatchState()
+            var gate = CapsInputSwitchGate()
+            latch.pressed()
+            XCTAssertNil(latch.released())
+            XCTAssertFalse(gate.released(shouldSwitch: true, latchRestored: false))
+            XCTAssertTrue(gate.isPending)
+            XCTAssertEqual(latch.observedChange(to: !original), original)
+            XCTAssertTrue(gate.isPending)
+            XCTAssertTrue(gate.latchRestored())
+            XCTAssertFalse(gate.latchRestored())
+            XCTAssertNil(latch.observedChange(to: !original))
+        }
+    }
+
+    func testCapsInputSwitchRequiresRestorationEvenWhenEventPrecedesRelease() {
+        for original in [false, true] {
+            var latch = CapsLockLatchState()
+            var gate = CapsInputSwitchGate()
+            latch.pressed()
+            XCTAssertEqual(latch.observedChange(to: !original), original)
+            XCTAssertEqual(latch.released(), original)
+            XCTAssertTrue(gate.released(shouldSwitch: true, latchRestored: true))
+            XCTAssertFalse(gate.isPending)
+            XCTAssertFalse(gate.latchRestored())
+
+            XCTAssertFalse(gate.released(shouldSwitch: false, latchRestored: false))
+            XCTAssertFalse(gate.isPending)
+            XCTAssertFalse(gate.released(shouldSwitch: true, latchRestored: false))
+            gate.cancel()
+            XCTAssertFalse(gate.latchRestored())
+        }
+    }
+
     func testCapsTapHasNoInputSourceActionAndUnassignedKeysPassThrough() {
         var keys = KeyboardRemappingState()
         keys.enabled = [.capsShortcuts]
