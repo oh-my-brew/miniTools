@@ -90,7 +90,7 @@ struct KeyboardRemappingState {
     enum CapsTapBlockReason: Equatable {
         case heldModifier
         case otherKey
-        case modifierChanged
+        case modifierChanged(UInt16)
     }
 
     struct Modifiers: OptionSet {
@@ -239,7 +239,9 @@ struct KeyboardRemappingState {
     mutating func rightCommandChanged(down: Bool, at time: TimeInterval) -> Result {
         if capsHeld {
             capsUsed = true
-            if capsTapBlockReason == nil { capsTapBlockReason = .modifierChanged }
+            if capsTapBlockReason == nil {
+                capsTapBlockReason = .modifierChanged(UInt16(kVK_RightCommand))
+            }
         }
         guard enabled.contains(.doubleRightCommand) else { return .pass }
         if down {
@@ -258,10 +260,14 @@ struct KeyboardRemappingState {
         return .pass
     }
 
-    mutating func otherModifierChanged() {
+    mutating func otherModifierChanged(_ code: UInt16) {
+        guard [
+            kVK_Command, kVK_Shift, kVK_Option, kVK_Control,
+            kVK_RightShift, kVK_RightOption, kVK_RightControl, kVK_Function
+        ].contains(Int(code)) else { return }
         if capsHeld {
             capsUsed = true
-            if capsTapBlockReason == nil { capsTapBlockReason = .modifierChanged }
+            if capsTapBlockReason == nil { capsTapBlockReason = .modifierChanged(code) }
         }
         rightCommandChord = true
         previousRightCommandRelease = nil

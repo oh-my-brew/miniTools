@@ -203,13 +203,19 @@ final class KeyboardRemappingStateTests: XCTestCase {
                        [.cancelShortcuts, .capsTapBlocked(.otherKey)])
 
         _ = keys.capsChanged(down: true)
-        keys.otherModifierChanged()
+        keys.otherModifierChanged(UInt16(kVK_Shift))
         XCTAssertEqual(keys.capsChanged(down: false),
-                       [.cancelShortcuts, .capsTapBlocked(.modifierChanged)])
+                       [.cancelShortcuts, .capsTapBlocked(.modifierChanged(UInt16(kVK_Shift)))])
 
         _ = keys.capsChanged(down: true, modifiersHeld: true)
         XCTAssertEqual(keys.capsChanged(down: false),
                        [.cancelShortcuts, .capsTapBlocked(.heldModifier)])
+
+        // A synthetic flagsChanged with an unrelated keycode is not a chord.
+        _ = keys.capsChanged(down: true)
+        keys.otherModifierChanged(UInt16(kVK_ANSI_A))
+        keys.otherModifierChanged(UInt16(kVK_CapsLock))
+        XCTAssertEqual(keys.capsChanged(down: false), [.cancelShortcuts, .switchInputSource])
     }
 
     func testCapsShortcutAndInputSourceSwitchAreIndependent() {
@@ -228,7 +234,9 @@ final class KeyboardRemappingStateTests: XCTestCase {
         _ = keys.capsChanged(down: true)
         _ = keys.rightCommandChanged(down: true, at: 1)
         XCTAssertEqual(keys.capsChanged(down: false),
-                       [.cancelShortcuts, .capsTapBlocked(.modifierChanged)])
+                       [.cancelShortcuts, .capsTapBlocked(
+                           .modifierChanged(UInt16(kVK_RightCommand))
+                       )])
         keys.reset()
         XCTAssertTrue(keys.capsChanged(down: false).isEmpty)
     }
@@ -313,7 +321,7 @@ final class KeyboardRemappingStateTests: XCTestCase {
         _ = state.rightCommandChanged(down: false, at: 1.1)
         XCTAssertTrue(state.rightCommandChanged(down: true, at: 1.401).actions.isEmpty)
         _ = state.rightCommandChanged(down: false, at: 1.5)
-        state.otherModifierChanged()
+        state.otherModifierChanged(UInt16(kVK_Shift))
         XCTAssertTrue(state.rightCommandChanged(down: true, at: 1.6).actions.isEmpty)
     }
 }
