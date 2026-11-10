@@ -19,8 +19,8 @@ enum KeyboardRemappingRule: String, CaseIterable, Identifiable {
         case .safariHide: "Safari：⌘Q → 隐藏"
         case .capsShortcuts: "Caps Lock → miniTools / 已启用映射"
         case .doubleRightCommand: "双击右 Command → Codex"
-        case .homerowControlShortcuts: "Homerow：⌃⌥⇧⌘ M / , / . → ⌃ M / , / ."
-        case .ghosttyControlShortcut: "Ghostty：⌃⌥⇧⌘ / → ⌃ /"
+        case .homerowControlShortcuts: "Homerow：Caps Lock / ⌃⌥⇧⌘ + M、,、. → ⌃+同键"
+        case .ghosttyControlShortcut: "Ghostty：Caps Lock / ⌃⌥⇧⌘ + / → ⌃/"
         }
     }
 
@@ -38,19 +38,40 @@ enum KeyboardRemappingRule: String, CaseIterable, Identifiable {
 /// cannot reliably recover the state from before the press.
 struct CapsLockLatchState {
     private(set) var original: Bool?
+    private var physicalReleased = false
+    private var suppressLateEvents = false
 
-    mutating func observedChange(to newValue: Bool) -> Bool {
+    mutating func pressed() {
+        physicalReleased = false
+        suppressLateEvents = false
+    }
+
+    mutating func observedChange(to newValue: Bool) -> Bool? {
+        guard !suppressLateEvents else { return nil }
         if original == nil { original = !newValue }
-        return original!
+        if physicalReleased {
+            // HID release can precede both session flagsChanged events. Only
+            // the first event identifies the old latch; the next belongs to
+            // the same press and must not start another restoration.
+            defer { original = nil; suppressLateEvents = true }
+            return original
+        }
+        return original
     }
 
     mutating func released() -> Bool? {
+        physicalReleased = true
+        if original != nil { suppressLateEvents = true }
         defer { original = nil }
         return original
     }
 
     mutating func cancel() -> Bool? {
-        defer { original = nil }
+        defer {
+            original = nil
+            physicalReleased = false
+            suppressLateEvents = false
+        }
         return original
     }
 }

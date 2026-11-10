@@ -77,8 +77,6 @@ final class KeyboardRemappingMonitor {
     private var hidManager: IOHIDManager?
     private var capsSystem: CapsLockSystemState?
     private var capsLatch = CapsLockLatchState()
-    private var capsWasReleased = false
-    private var capsNeedsLateRestore = false
     private var capsPhysicalHeld = false
     private(set) var capsAvailable = false
     private static let postedMarker: Int64 = 0x4D54_524D_4150
@@ -145,8 +143,6 @@ final class KeyboardRemappingMonitor {
         }
         hidManager = nil
         capsSystem = nil
-        capsWasReleased = false
-        capsNeedsLateRestore = false
         capsPhysicalHeld = false
         capsAvailable = false
         state.reset()
@@ -176,16 +172,12 @@ final class KeyboardRemappingMonitor {
 
     fileprivate func handleCapsChanged(down: Bool) {
         capsPhysicalHeld = down
-        capsWasReleased = !down
-        if down { capsNeedsLateRestore = false }
+        if down { capsLatch.pressed() }
         for action in state.capsChanged(down: down) { perform(action) }
         if !down {
             if let target = capsLatch.released() {
                 // Keep the original Caps Lock latch without changing the input source.
                 _ = capsSystem?.set(target)
-            } else {
-                // HID release can arrive before the corresponding session event.
-                capsNeedsLateRestore = true
             }
         }
     }
@@ -193,7 +185,6 @@ final class KeyboardRemappingMonitor {
     fileprivate func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let original = capsLatch.cancel() { _ = capsSystem?.set(original) }
-            capsNeedsLateRestore = false
             state.reset()
             perform(.cancelShortcuts)
             if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: true) }
@@ -213,22 +204,11 @@ final class KeyboardRemappingMonitor {
             } else if code == UInt16(kVK_CapsLock), capsAvailable {
                 // The HID callback handles the physical down/up; the system latch
                 // is reconciled on release, without forwarding a Caps modifier.
-                if capsWasReleased {
-                    capsWasReleased = false
-                    if capsNeedsLateRestore {
-                        let original = capsLatch.observedChange(
-                            to: event.flags.contains(.maskAlphaShift)
-                        )
-                        _ = capsSystem?.set(original)
-                        _ = capsLatch.cancel()
-                        capsNeedsLateRestore = false
-                    }
-                    return nil
-                }
-                let original = capsLatch.observedChange(
+                if let original = capsLatch.observedChange(
                     to: event.flags.contains(.maskAlphaShift)
-                )
-                _ = capsSystem?.set(original)
+                ) {
+                    _ = capsSystem?.set(original)
+                }
                 return nil
             } else {
                 state.otherModifierChanged()

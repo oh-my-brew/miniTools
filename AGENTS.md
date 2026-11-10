@@ -70,7 +70,7 @@ CODE_SIGN_IDENTITY="Apple Development: Name (TEAMID)" ./Scripts/build-app.sh
 ## 设置分类
 
 - 通用集中登录启动、辅助功能/输入监控授权及当前版本号（不显示构建号）；授权只在用户点击时请求，设置出现和应用回到前台时查询状态，无后台监控。
-- 「键盘映射」中的七条规则默认关闭且分别持久化；Homerow 的四修饰键+M/逗号/句号 → Control+同键（三键一组）及 Ghostty 的四修饰键+斜杠 → Control+斜杠，目标应用自行响应。Caps Lock 单按无操作，按住只路由 miniTools 当前四修饰键动作和另行启用的上述四个精确映射，不向其他应用透传任意 Hyper；不切换输入法或大小写，miniTools 已注册键优先。保留现有 `capsShortcuts` 持久化标识，升级后沿用用户开关。双击右 Command 目标为 Codex（实际 Bundle ID `com.openai.codex`，原规则标题写 ChatGPT）。事件 tap 必须按需开启，权限失效、方案切换或停用时取消按键状态及长按；未命中事件放行，不修改 Karabiner/Homerow 配置。CI 仅做可隔离状态机测试，真实键盘交互需用户体验。
+- 「键盘映射」中的七条规则默认关闭且分别持久化；Homerow 的四修饰键+M/逗号/句号 → Control+同键（三键一组）及 Ghostty 的四修饰键+斜杠 → Control+斜杠，目标应用自行响应。Caps Lock 单按无 miniTools 动作，按住只路由 miniTools 当前四修饰键动作和另行启用的上述四个精确映射，不向其他应用透传任意 Hyper；miniTools 不切换输入法，macOS 系统级 Caps Lock 切换输入法需用户在系统设置中关闭，不自动改全局配置。保留按下前的大小写锁定状态，HID 松键与 session 事件交错时不可把第二个迟到事件视为新一次按压；miniTools 已注册键优先。保留现有 `capsShortcuts` 持久化标识，升级后沿用用户开关。双击右 Command 目标为 Codex（实际 Bundle ID `com.openai.codex`，原规则标题写 ChatGPT）。事件 tap 必须按需开启，权限失效、方案切换或停用时取消按键状态及长按；未命中事件放行，不修改 Karabiner/Homerow 配置。CI 仅做可隔离状态机测试，真实键盘交互需用户体验。
 - 「编码与工具」设置分类保存统一面板快捷键（默认四修饰键加 Space）和 JPEG 压缩质量，功能名仍为「编码与转换」，保留上次使用页签。跨屏默认键为四修饰键加分号/单引号；仅一次迁移旧默认 P/分号，保留自定义及迁移后重新选择旧键的配置。备忘录只加入未配置或明确恢复时的默认名单，既有显式名单不补回。
 
 ## 窗口管理
