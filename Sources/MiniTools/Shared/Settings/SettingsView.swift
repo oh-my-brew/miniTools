@@ -275,7 +275,7 @@ private struct SettingsCategoryDetail: View {
         } header: {
             Text("按键映射")
         } footer: {
-            Text("各项默认关闭。启用前请关闭 Karabiner 或 Homerow 中相同的映射，避免重复处理。Caps Lock 单按无操作，按住时只触发 miniTools 当前配置的四修饰键快捷键，以及另行启用的 Homerow 和 Ghostty 映射；不切换输入法或大小写，不向其他应用发送任意四修饰键。冲突时 miniTools 快捷键优先。")
+            Text("各项默认关闭。启用前请关闭 Karabiner 中相同的映射。开启 Caps Lock 后，按住它可触发 miniTools 快捷键；另行开启 Homerow 或 Ghostty 时，Caps Lock + M、,、.、/ 可发送对应的 Control 组合。物理四修饰键组合也可触发这两组映射；冲突时 miniTools 快捷键优先。若单按 Caps Lock 仍切换输入法，请在「系统设置 → 键盘 → 文字输入 → 编辑」关闭系统的 Caps Lock 切换输入法选项；miniTools 不修改系统设置。")
         }
 
         if let error = shortcutCoordinator.keyboardRemappingError {
