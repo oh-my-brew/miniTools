@@ -86,11 +86,32 @@ struct CapsLockLatchState {
     }
 }
 
+/// A lone Caps tap may be released before its session event reveals the old latch.
+/// Keep the input-source request pending until restoring that latch succeeds.
+struct CapsInputSwitchGate {
+    private(set) var isPending = false
+
+    mutating func released(shouldSwitch: Bool, latchRestored: Bool) -> Bool {
+        isPending = shouldSwitch && !latchRestored
+        return shouldSwitch && latchRestored
+    }
+
+    mutating func latchRestored() -> Bool {
+        defer { isPending = false }
+        return isPending
+    }
+
+    mutating func cancel() {
+        isPending = false
+    }
+}
+
 struct KeyboardRemappingState {
     enum CapsTapBlockReason: Equatable {
         case heldModifier
         case otherKey
         case modifierChanged(UInt16)
+        case latchNotRestored
     }
 
     struct Modifiers: OptionSet {
