@@ -87,6 +87,12 @@ struct CapsLockLatchState {
 }
 
 struct KeyboardRemappingState {
+    enum CapsTapBlockReason: Equatable {
+        case heldModifier
+        case otherKey
+        case modifierChanged
+    }
+
     struct Modifiers: OptionSet {
         let rawValue: UInt8
         static let command = Self(rawValue: 1 << 0)
@@ -100,7 +106,9 @@ struct KeyboardRemappingState {
         case sendGrave(Modifiers)
         case hideSafari
         case openCodex
+        case capsPressObserved
         case switchInputSource
+        case capsTapBlocked(CapsTapBlockReason)
         case shortcutDown(UInt16)
         case shortcutUp(UInt16)
         case cancelShortcuts
@@ -121,6 +129,7 @@ struct KeyboardRemappingState {
     var availableCapsKeys: Set<UInt16> = []
     private var capsHeld = false
     private var capsUsed = false
+    private var capsTapBlockReason: CapsTapBlockReason?
     private var consumedCapsKeys: Set<UInt16> = []
     private var consumedKeyUps: Set<UInt16> = []
     private var rightCommandHeld = false
@@ -130,6 +139,7 @@ struct KeyboardRemappingState {
     mutating func reset() {
         capsHeld = false
         capsUsed = false
+        capsTapBlockReason = nil
         consumedCapsKeys.removeAll()
         consumedKeyUps.removeAll()
         rightCommandHeld = false
@@ -146,14 +156,21 @@ struct KeyboardRemappingState {
             guard !capsHeld else { return [] }
             capsHeld = true
             capsUsed = modifiersHeld
+            capsTapBlockReason = modifiersHeld ? .heldModifier : nil
             return []
         }
         guard capsHeld else { return [] }
         capsHeld = false
         let shouldSwitch = enabled.contains(.capsInputSourceSwitch) && !capsUsed
+        let blockReason = capsTapBlockReason
         capsUsed = false
+        capsTapBlockReason = nil
         // Do not turn releasing Caps into a short press of a held layout key.
-        return shouldSwitch ? [.cancelShortcuts, .switchInputSource] : [.cancelShortcuts]
+        if shouldSwitch { return [.cancelShortcuts, .switchInputSource] }
+        if enabled.contains(.capsInputSourceSwitch), let blockReason {
+            return [.cancelShortcuts, .capsTapBlocked(blockReason)]
+        }
+        return [.cancelShortcuts]
     }
 
     mutating func keyDown(
@@ -164,7 +181,10 @@ struct KeyboardRemappingState {
     ) -> Result {
         rightCommandChord = true
         previousRightCommandRelease = nil
-        if capsHeld { capsUsed = true }
+        if capsHeld {
+            capsUsed = true
+            if capsTapBlockReason == nil { capsTapBlockReason = .otherKey }
+        }
         if consumedCapsKeys.contains(code) || consumedKeyUps.contains(code) {
             return .handled()
         }
@@ -217,7 +237,10 @@ struct KeyboardRemappingState {
 
     /// Do not intercept either Command event: ordinary right Command chords still work.
     mutating func rightCommandChanged(down: Bool, at time: TimeInterval) -> Result {
-        if capsHeld { capsUsed = true }
+        if capsHeld {
+            capsUsed = true
+            if capsTapBlockReason == nil { capsTapBlockReason = .modifierChanged }
+        }
         guard enabled.contains(.doubleRightCommand) else { return .pass }
         if down {
             guard !rightCommandHeld else { return .pass }
@@ -236,7 +259,10 @@ struct KeyboardRemappingState {
     }
 
     mutating func otherModifierChanged() {
-        if capsHeld { capsUsed = true }
+        if capsHeld {
+            capsUsed = true
+            if capsTapBlockReason == nil { capsTapBlockReason = .modifierChanged }
+        }
         rightCommandChord = true
         previousRightCommandRelease = nil
     }

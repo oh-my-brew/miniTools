@@ -10,6 +10,10 @@ final class CapsInputSourceSwitcher {
         self.defaults = defaults
     }
 
+    func currentIdentifier() -> String? {
+        identifier(of: TISCopyCurrentKeyboardInputSource().takeRetainedValue())
+    }
+
     func rememberCurrent() {
         let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
         let ascii = TISCopyCurrentASCIICapableKeyboardLayoutInputSource().takeRetainedValue()
