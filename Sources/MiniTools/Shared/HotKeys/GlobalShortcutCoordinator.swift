@@ -188,6 +188,10 @@ final class GlobalShortcutCoordinator: ObservableObject {
             DispatchQueue.main.async {
                 KeyboardRemappingMonitor.postGrave(modifiers)
             }
+        case let .sendControlShortcut(code):
+            DispatchQueue.main.async {
+                KeyboardRemappingMonitor.postControlShortcut(code)
+            }
         case .hideSafari:
             DispatchQueue.main.async { [weak self] in
                 guard let safari = NSWorkspace.shared.frontmostApplication,

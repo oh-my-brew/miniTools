@@ -68,6 +68,59 @@ final class KeyboardRemappingStateTests: XCTestCase {
         XCTAssertTrue(state.capsChanged(down: false).used)
     }
 
+    func testControlMappingsRequireExactHyperChordAndEnabledRule() {
+        let hyper: KeyboardRemappingState.Modifiers = [.command, .option, .shift, .control]
+        for (rule, codes) in [
+            (KeyboardRemappingRule.homerowControlShortcuts,
+             [kVK_ANSI_M, kVK_ANSI_Comma, kVK_ANSI_Period]),
+            (.ghosttyControlShortcut, [kVK_ANSI_Slash])
+        ] {
+            for rawCode in codes {
+                let code = UInt16(rawCode)
+                var state = KeyboardRemappingState()
+                XCTAssertFalse(state.keyDown(code, modifiers: hyper, isRepeat: false,
+                                             safariFrontmost: false).consume)
+                state.enabled = [rule]
+                let nonMatching: [KeyboardRemappingState.Modifiers] = [
+                    [], [.command, .option, .control], [.command, .shift, .option],
+                    [.control, .shift]
+                ]
+                for modifiers in nonMatching {
+                    XCTAssertFalse(state.keyDown(code, modifiers: modifiers, isRepeat: false,
+                                                 safariFrontmost: false).consume)
+                }
+                let result = state.keyDown(code, modifiers: hyper, isRepeat: false,
+                                           safariFrontmost: false)
+                XCTAssertTrue(result.consume)
+                XCTAssertEqual(result.actions, [.sendControlShortcut(code)])
+                XCTAssertTrue(state.keyDown(code, modifiers: hyper, isRepeat: true,
+                                            safariFrontmost: false).actions.isEmpty)
+                XCTAssertTrue(state.keyUp(code).consume)
+                XCTAssertFalse(state.keyUp(code).consume)
+            }
+        }
+    }
+
+    func testCapsControlMappingPreservesInputSourceAndMiniToolsShortcutPriority() {
+        let code = UInt16(kVK_ANSI_M)
+        var state = KeyboardRemappingState()
+        state.enabled = [.capsShortcuts, .homerowControlShortcuts]
+        _ = state.capsChanged(down: true)
+        XCTAssertEqual(state.keyDown(code, modifiers: [], isRepeat: false,
+                                     safariFrontmost: false).actions, [.sendControlShortcut(code)])
+        XCTAssertTrue(state.keyUp(code).consume)
+        XCTAssertEqual(state.capsChanged(down: false).actions, [.cancelShortcuts])
+
+        state.availableCapsKeys = [code]
+        _ = state.capsChanged(down: true)
+        XCTAssertEqual(state.keyDown(code, modifiers: [], isRepeat: false,
+                                     safariFrontmost: false).actions, [.shortcutDown(code)])
+        XCTAssertEqual(state.keyUp(code).actions, [.shortcutUp(code)])
+        _ = state.capsChanged(down: false)
+        XCTAssertFalse(state.keyDown(code, modifiers: [.command, .option, .shift, .control],
+                                     isRepeat: false, safariFrontmost: false).consume)
+    }
+
     func testCapsLatchStaysUnchangedThroughHeldShortcutInBothDirections() {
         for original in [false, true] {
             var latch = CapsLockLatchState()
