@@ -178,11 +178,10 @@ final class KeyboardRemappingMonitor {
         capsPhysicalHeld = down
         capsWasReleased = !down
         if down { capsNeedsLateRestore = false }
-        let outcome = state.capsChanged(down: down)
-        for action in outcome.actions { perform(action) }
+        for action in state.capsChanged(down: down) { perform(action) }
         if !down {
             if let target = capsLatch.released() {
-                // Input source switching is separate from the Caps Lock latch.
+                // Keep the original Caps Lock latch without changing the input source.
                 _ = capsSystem?.set(target)
             } else {
                 // HID release can arrive before the corresponding session event.
