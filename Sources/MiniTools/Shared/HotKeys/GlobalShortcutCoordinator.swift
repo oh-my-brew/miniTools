@@ -273,8 +273,9 @@ final class GlobalShortcutCoordinator: ObservableObject {
                     self.capsInputSourceStatus = "未识别为单按：按下 Caps Lock 时检测到其他修饰键"
                 case .otherKey:
                     self.capsInputSourceStatus = "未识别为单按：按住 Caps Lock 时检测到其他按键"
-                case .modifierChanged:
-                    self.capsInputSourceStatus = "未识别为单按：按住 Caps Lock 时检测到修饰键变化"
+                case let .modifierChanged(code):
+                    self.capsInputSourceStatus =
+                        "未识别为单按：按住 Caps Lock 时检测到修饰键变化（键码 \(code)）"
                 }
             }
         case let .shortcutDown(code):
