@@ -10,8 +10,23 @@
 - 「编码与工具」设置分类容纳统一面板快捷键与 JPEG 压缩质量，不改变「编码与转换」功能名或统一面板上次页签行为。
 - 「键盘映射」分别保存八条可选规则，默认均关闭：命令/Shift 加 Esc 对应同修饰键加反引号、仅 Safari 的命令 Q 隐藏、Caps Lock 作为限定前缀（只路由 miniTools 已注册的四修饰键快捷键和另行启用的 Homerow/Ghostty 四个精确映射）、独立的单按 Caps Lock 输入法切换、300ms 内双击右 Command 打开 Bundle ID 为 `com.openai.codex` 的应用；Homerow 三键组将四修饰键加 M/逗号/句号精确映射为 Control 加同键，Ghostty 一键将四修饰键加斜杠映射为 Control 加斜杠。后两组物理四修饰键组合全局生成对应 Control 事件，目标应用自行处理，单独开关；启用 Caps 前缀时相同按键也可通过 Caps 触发，和已注册的 miniTools 四修饰键冲突时优先 miniTools。单按切换只在独立规则启用且没有组合按键时使用 Text Input Source API 切到英文布局或先前使用的输入法，保留 `capsLockPreviousInputSourceID`；不向其他应用透传通用 Hyper。macOS 自身的 Caps Lock 切换输入法选项由用户在系统设置中关闭，应用不修改系统偏好。通过 Caps 事件的新状态恢复按下前的锁定状态，不能从可能已切换的 HID 状态反推旧值；HID 松键早于 session 事件时只使用首个迟到事件，不能将第二个事件当作新一次按压。只监听启用规则，未命中事件原样放行；保持原有快捷键录制和两套布局互斥。Karabiner 中相同的规则由用户在体验前停用，不自动修改其他程序配置。
 - 单按 Caps Lock 规则启用时，在设置页显示最近一次按压被识别还是被组合键阻止、切换请求结果及约一秒后的实际输入源；只有 Caps Lock 原锁定状态恢复成功后才发出切换请求，HID 松键早于 session 事件时等待恢复，无法确认时不切换并显示原因。只保存内存状态，不读取输入内容；输入源 ID 不能代表第三方输入法内部的中英文模式。
+- 输入源切换由 `FocusedInputSourceSelection` 决定进程边界：优先向键盘焦点进程请求选择，miniTools 自身或未知焦点直接使用本机 TIS；动态符号、序列化或端口在发送前不可用时才回退。可选私有通道在运行时查找 `CFMessagePortCreatePerProcessRemote`（PID 参数为 `CFIndex`）和 `_CreateFlattenedInputSource`，将源元数据发到该进程的 `com.apple.tsm.portname`，消息为 7；不传输入内容。焦点优先使用可选 `SLPSGetTypingFocusProcess`，缺失时以 25ms AX 超时查询真正的键盘焦点，不以最前台应用替代非激活面板。发送/回复各设 50ms 超时，必须在事件 tap 外调用；回复循环可以重入，代际检查和防重入保护须贯穿回退与结果提交。回复超时仅代表等待回复，不触发第二次选择；其他发送错误也不重试，焦点改变/取消后停止后续动作。约一秒后比较本次准确目标 ID，其他输入源变化不得当作成功。该通道不是 Apple 稳定公开契约，系统变更后应保持能力回退及明确诊断，不能宣称回复或 ID 匹配等于中文输入就绪。
 - Caps 按住期间仅将明确的左右修饰键和 Fn 键码的 `flagsChanged` 判作组合；未识别键码的事件不阻止单按，仍被修饰键阻止时显示键码。
 - 跨屏默认快捷键改为四修饰键加分号（窗口）/单引号（鼠标）；仅首次将存储值中匹配旧默认 P/分号的项迁移，保留自定义。迁移后选择旧键不会再次覆盖。备忘录加入默认兼容名单，但保留已有显式名单，恢复默认需确认。
+
+#### Caps Lock 切回豆包后的输入延迟兼容修复（2026-11-11，运行时待验证）
+
+用户确认在 ChatGPT 桌面端较久未操作后，首次用 Caps Lock 切回豆包，立即输入容易出现英文，等一至两秒再输入则为中文；当时输入源已是豆包。闲置阈值和运行中的 miniTools 版本未确认。用户没有时间专门等待闲置做对照，后续调查不以此为前提。
+
+修复前的 `CapsInputSourceSwitcher.toggle()` 仅在 miniTools 进程调用 `TISSelectInputSource`，协调器约一秒后仅确认输入源 ID 是否变化；这些信号不验证前台输入上下文或豆包的中文输入就绪。现在优先将本次准确目标交给键盘焦点进程选择，以修正请求与实际接收输入的进程分离问题。保留锁定状态恢复门控；该状态写入未回读是独立盲点，尚无证据将它认定为此次延迟的根因。
+
+外部原始记录提供相近线索，不能替代本项目的运行时证据：
+
+- [doubao_voice README](https://github.com/DarkMagician55/doubao_voice/blob/4ffadfe7b5f96c36f1205b8391a2a58d18195db0/README.md)：作者记录直接选择豆包后输入源已改变，但语音快捷键监听未完整激活，改用模拟系统快捷键绕过。其验证对象是语音快捷键、环境说明为 macOS 15，与本次 ChatGPT 键盘输入延迟不同，不能据此宣称已找到根因或修复。
+- [SourceSwitch README](https://github.com/weizhliu/source-switch/blob/33c818afe6006fcbededf0f8b378e112bd3ca716/README.md) 与 [FrontAppSelection.swift](https://github.com/weizhliu/source-switch/blob/33c818afe6006fcbededf0f8b378e112bd3ca716/Sources/SourceSwitch/FrontAppSelection.swift)：作者记录跨进程选择输入源后指示已改变、前台应用却可能继续使用之前的输入方式；其消息协议提供兼容路径的调查依据。miniTools 独立实现路由、取消与诊断，不将该项目的运行结果当作本次验证。
+- [Apple CFMessagePort 实现](https://github.com/apple-oss-distributions/CF/blob/main/CFMessagePort.c) 可核对进程端口创建函数 PID 为 `CFIndex`；[Apple 错误码文档](https://developer.apple.com/documentation/corefoundation/1561514-cfmessageportsendrequest-error-c) 将接收超时定义为尚未收到回复，而非发送失败。miniTools 据此将接收超时保留为待确认，不重复回退选择。
+
+取舍是采用有超时和能力回退的可选 TSM 通道，不固定延时后宣称就绪，不模拟固定 Control+Space 或抢焦点。隔离测试注入焦点、消息响应与 TIS 客户端，覆盖前台请求、能力回退、延迟回复、发送失败、焦点变化、取消/重入、既有输入法记忆及准确目标诊断，不查询真实输入源或端口。源码验证交由准确提交的 GitHub Actions；这些测试不验证 macOS 内部消息协议、豆包或 ChatGPT 的实际输入效果。
 
 ### 统一功能面板
 
