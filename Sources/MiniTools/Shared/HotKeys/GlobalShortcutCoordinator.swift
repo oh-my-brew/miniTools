@@ -304,6 +304,8 @@ final class GlobalShortcutCoordinator: ObservableObject {
             routeCapsShortcut(code, pressed: true)
         case let .shortcutUp(code):
             routeCapsShortcut(code, pressed: false)
+        case .cancelInputSourceSwitch:
+            cancelCapsInputSourceRequest()
         case .cancelShortcuts:
             for id in capsLongPressIDs { longPressRecognizers[id]?.cancel() }
             capsLongPressIDs.removeAll()
