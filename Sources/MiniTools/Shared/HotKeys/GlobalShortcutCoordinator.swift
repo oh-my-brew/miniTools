@@ -102,6 +102,7 @@ final class GlobalShortcutCoordinator: ObservableObject {
     }
 
     func stop() {
+        cancelCapsInputSourceRequest()
         remappingMonitor.stop()
         if let remappingActivationObserver {
             NotificationCenter.default.removeObserver(remappingActivationObserver)
@@ -125,7 +126,10 @@ final class GlobalShortcutCoordinator: ObservableObject {
 
     private func refreshKeyboardRemapping() {
         let rules = settings.keyboardRemappingRules
-        if !rules.contains(.capsInputSourceSwitch) { capsInputSourceStatus = nil }
+        if !rules.contains(.capsInputSourceSwitch) {
+            cancelCapsInputSourceRequest()
+            capsInputSourceStatus = nil
+        }
         if rules.contains(.capsInputSourceSwitch) { capsInputSourceSwitcher.rememberCurrent() }
         guard !rules.isEmpty else {
             remappingMonitor.stop()
@@ -133,18 +137,20 @@ final class GlobalShortcutCoordinator: ObservableObject {
             return
         }
         guard AccessibilityAuthorization.isTrusted else {
+            cancelCapsInputSourceRequest()
             remappingMonitor.stop()
             keyboardRemappingError = "需要在「通用」中授予辅助功能权限"
             return
         }
         guard CGPreflightListenEventAccess() else {
+            cancelCapsInputSourceRequest()
             remappingMonitor.stop()
             keyboardRemappingError = "需要在「通用」中授予输入监控权限"
             return
         }
         if remappingMonitor.isRunning, remappingMonitor.enabled == rules,
            keyboardRemappingError == nil { return }
-        capsInputSourceCheckGeneration += 1
+        cancelCapsInputSourceRequest()
         capsInputSourceStatus = nil
         remappingMonitor.stop()
         remappingMonitor.enabled = rules
@@ -155,6 +161,11 @@ final class GlobalShortcutCoordinator: ObservableObject {
         } else {
             keyboardRemappingError = running ? nil : "键盘监听不可用，请检查系统授权"
         }
+    }
+
+    private func cancelCapsInputSourceRequest() {
+        capsInputSourceCheckGeneration += 1
+        capsInputSourceSwitcher.cancel()
     }
 
     private var capsShortcutKeys: Set<UInt16> {
@@ -225,49 +236,58 @@ final class GlobalShortcutCoordinator: ObservableObject {
                 }
             }
         case .capsPressObserved:
+            cancelCapsInputSourceRequest()
+            let generation = capsInputSourceCheckGeneration
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.settings.keyboardRemappingRules.contains(.capsInputSourceSwitch)
+                guard let self, self.capsInputSourceCheckGeneration == generation,
+                      self.settings.keyboardRemappingRules.contains(.capsInputSourceSwitch)
                 else { return }
-                self.capsInputSourceCheckGeneration += 1
                 self.capsInputSourceStatus = "检测到 Caps Lock 按下，等待松开"
             }
         case .switchInputSource:
+            cancelCapsInputSourceRequest()
+            let generation = capsInputSourceCheckGeneration
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.remappingMonitor.isRunning,
+                guard let self, self.capsInputSourceCheckGeneration == generation,
+                      self.remappingMonitor.isRunning,
                       self.settings.keyboardRemappingRules.contains(.capsInputSourceSwitch) else {
                     return
                 }
-                self.capsInputSourceCheckGeneration += 1
-                let generation = self.capsInputSourceCheckGeneration
-                let before = self.capsInputSourceSwitcher.currentIdentifier()
-                let error = self.capsInputSourceSwitcher.toggle()
-                self.keyboardRemappingError = error
-                guard error == nil else {
-                    self.capsInputSourceStatus = "已识别单按；切换请求失败"
+                let result = self.capsInputSourceSwitcher.toggle()
+                guard self.capsInputSourceCheckGeneration == generation,
+                      self.remappingMonitor.isRunning,
+                      self.settings.keyboardRemappingRules.contains(.capsInputSourceSwitch) else {
                     return
                 }
-                self.capsInputSourceStatus = "已识别单按；切换请求已发送，正在确认结果"
+                let request: CapsInputSourceSwitcher.Request
+                switch result {
+                case let .failure(failure):
+                    self.keyboardRemappingError = failure.message
+                    self.capsInputSourceStatus = "已识别单按；切换请求失败"
+                    return
+                case let .success(value):
+                    self.keyboardRemappingError = nil
+                    request = value
+                }
+                self.capsInputSourceStatus = request.pendingStatus
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
                     guard let self, self.capsInputSourceCheckGeneration == generation,
                           self.remappingMonitor.isRunning,
                           self.settings.keyboardRemappingRules.contains(.capsInputSourceSwitch) else {
                         return
                     }
-                    let after = self.capsInputSourceSwitcher.currentIdentifier()
-                    if let before, let after {
-                        self.capsInputSourceStatus = before == after
-                            ? "切换请求成功，但当前输入法未改变（\(after)）"
-                            : "输入法已从 \(before) 切换到 \(after)"
-                    } else {
-                        self.capsInputSourceStatus = "切换请求成功，但无法确认当前输入法"
-                    }
+                    self.capsInputSourceStatus = request.confirmationStatus(
+                        observed: self.capsInputSourceSwitcher.currentIdentifier()
+                    )
                 }
             }
         case let .capsTapBlocked(reason):
+            cancelCapsInputSourceRequest()
+            let generation = capsInputSourceCheckGeneration
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.settings.keyboardRemappingRules.contains(.capsInputSourceSwitch)
+                guard let self, self.capsInputSourceCheckGeneration == generation,
+                      self.settings.keyboardRemappingRules.contains(.capsInputSourceSwitch)
                 else { return }
-                self.capsInputSourceCheckGeneration += 1
                 switch reason {
                 case .heldModifier:
                     self.capsInputSourceStatus = "未识别为单按：按下 Caps Lock 时检测到其他修饰键"
