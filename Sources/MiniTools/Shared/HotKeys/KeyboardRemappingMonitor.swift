@@ -217,6 +217,7 @@ final class KeyboardRemappingMonitor {
             capsSwitchGate.cancel()
             if let original = capsLatch.cancel() { _ = capsSystem?.set(original) }
             state.reset()
+            perform(.cancelInputSourceSwitch)
             perform(.cancelShortcuts)
             if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: true) }
             return Unmanaged.passUnretained(event)
