@@ -1,3 +1,4 @@
+import ApplicationServices
 import Foundation
 import XCTest
 @testable import MiniTools
@@ -13,6 +14,50 @@ private final class SafariTestState: @unchecked Sendable {
 }
 
 final class SafariResponsivenessTests: XCTestCase {
+    func testAXReadRetriesOnlyCannotCompleteWithLongerTimeout() throws {
+        var timeouts: [Float] = []
+        var checks = 0
+        let result: (status: AXError, value: Int?) = try SafariAXReadRetry.run(
+            initialTimeout: 0.15, retryTimeout: 0.45,
+            check: { checks += 1 },
+            read: { timeout in
+                timeouts.append(timeout)
+                return timeout == 0.15 ? (.cannotComplete, nil) : (.success, 42)
+            }
+        )
+        XCTAssertEqual(result.status, .success)
+        XCTAssertEqual(result.value, 42)
+        XCTAssertEqual(timeouts, [0.15, 0.45])
+        XCTAssertEqual(checks, 2)
+    }
+
+    func testAXReadDoesNotRetryPermanentFailureOrAfterCancellation() throws {
+        var attempts = 0
+        let permanent: (status: AXError, value: Int?) = try SafariAXReadRetry.run(
+            initialTimeout: 0.15, retryTimeout: 0.45, check: {},
+            read: { _ in attempts += 1; return (.apiDisabled, nil) }
+        )
+        XCTAssertEqual(permanent.status, .apiDisabled)
+        XCTAssertEqual(attempts, 1)
+
+        let stillUnresponsive: (status: AXError, value: Int?) = try SafariAXReadRetry.run(
+            initialTimeout: 0.15, retryTimeout: 0.45, check: {},
+            read: { _ in attempts += 1; return (.cannotComplete, nil) }
+        )
+        XCTAssertEqual(stillUnresponsive.status, .cannotComplete)
+        XCTAssertEqual(attempts, 3)
+
+        XCTAssertThrowsError(try SafariAXReadRetry.run(
+            initialTimeout: 0.15, retryTimeout: 0.45,
+            check: { if attempts == 4 { throw CancellationError() } },
+            read: { _ -> (status: AXError, value: Int?) in
+                attempts += 1
+                return (.cannotComplete, nil)
+            }
+        )) { XCTAssertTrue($0 is CancellationError) }
+        XCTAssertEqual(attempts, 4)
+    }
+
     private func window(_ id: String) -> SafariWindowItem {
         .init(id: id, title: id, wasActiveWindow: false, hasTabGroup: false)
     }

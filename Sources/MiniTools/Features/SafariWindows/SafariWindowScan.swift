@@ -1,4 +1,20 @@
+import ApplicationServices
 import Foundation
+
+enum SafariAXReadRetry {
+    static func run<Value>(
+        initialTimeout: Float,
+        retryTimeout: Float?,
+        check: () throws -> Void,
+        read: (Float) -> (status: AXError, value: Value?)
+    ) throws -> (status: AXError, value: Value?) {
+        try check()
+        let first = read(initialTimeout)
+        guard first.status == .cannotComplete, let retryTimeout else { return first }
+        try check()
+        return read(retryTimeout)
+    }
+}
 
 /// A cancelled AX call may finish later. Chain scans so reopening never overlaps AX walks.
 actor SafariWindowScanWorker {
