@@ -102,6 +102,8 @@ Swift 常规 CI 保留单元测试所需编译；发行配置的 arm64 构建由
 
 ## 本次变更
 
+- 2026-11-11 Safari 读取修复发行核验：用户截图中的 `-25204` 发生在读取 Safari 窗口/子节点属性时，扫描现仅对 `cannotComplete` 有界重试一次，保留取消及扫描预算；隔离测试覆盖重试成功、持续失败、永久错误和取消。开发 PR #118 的准确源码 `a5db0b0cff65d758a73e6d2a84e577bb5ef7163f` 经 Actions run `42985649114` 创建候选 PR #119（提交 `0ee11ce73580d8e2ef130117bea6d5a062fc2b1d`）；候选测试、安全、Developer ID 签名、公证 Accepted、stapling、Gatekeeper（Notarized Developer ID）、Beta 与自动提升均成功。PR #119 合入主分支提交 `3e0792a3effd5f73212cb301dcde5f5c4b718b9b`，合入 tree 与候选均为 `4608105311815406316a832a9dc8cfb019a31275`。正式版 `v2026.11.11.2` 为 GitHub Latest；候选和正式 ZIP 的 SHA-256 均为 `58b0c04b689d487c54882a0bbdf5a15863ef5408bfe5c10f56de9d7b8ddc2a72`，两个 feed 均带 Sparkle 签名。未安装或运行应用；接续：用户通过“检查更新…”升级后重开 Safari 窗口面板，若仍出现 `-25204`，记录当时 Safari 是否响应及报错是否持续，以区分暂时性 AX 通信失败与目标应用状态。
+
 - 2026-11-11：用户在 M5 验证关闭 miniTools 单按切换规则后，手动选中的豆包中文不会因单独按 Caps Lock 变成英文；开启规则时切回豆包却可能落在豆包英文。已修复 HID 松键早于 session Caps 事件时输入源切换请求可能先于锁定状态恢复的顺序问题：恢复成功才请求切换，无法确认则取消并在设置页说明。隔离测试覆盖事件先后顺序；输入源 ID 变化不能证明豆包内部中文模式已生效，实际效果须在发布后体验确认。
 - 2026-11-11 发行核验：准确源码 `5ae17885021c7bb78b1d9248901a927d5f8a022a` 经受信任 `master` 派发 Actions run `42897042609`，候选 PR #116 的提交为 `68f8d596eb9b41b4914a1cfad81d5736de457274`。候选测试、安全、签名公证打包、Beta 与自动提升均成功；PR #116 合入提交 `21e207d76221085b6556425d3ac2f8e4955382cd`，合入 tree 与候选均为 `96f84120d44c5304a9c4600315a5defbd13f74d7`。正式版 `v2026.11.11.1` 为 GitHub Latest，候选与正式 ZIP 的 SHA-256 均为 `98128e6ecac86e66945e5fb8d233f244a4ac713c2974b62ee377b9e4eefa8cf5`，公证结果为 Accepted、Gatekeeper 来源为 Notarized Developer ID，两个 feed 均带更新签名；未安装应用。接续：用户通过“检查更新…”升级后，在同一输入框用 Caps Lock 连续测试 ABC ↔ 豆包中文；若仍落入豆包英文，记录设置页单按诊断，再区分输入源 API 与输入法内部模式。
 
