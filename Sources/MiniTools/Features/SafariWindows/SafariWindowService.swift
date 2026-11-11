@@ -30,7 +30,9 @@ enum SafariWindowService {
         let (application, axApplication) = try safariApplication()
         let budget = SafariWindowScanBudget()
         try budget.check()
-        let windows = try ResponsivenessMetrics.measure("SafariEnumerateWindows") { try accessibilityWindows(of: axApplication) }
+        let windows = try ResponsivenessMetrics.measure("SafariEnumerateWindows") {
+            try accessibilityWindows(of: axApplication, budget: budget)
+        }
         let focusedWindow = AccessibilityClient.element(
             from: axApplication,
             attribute: kAXFocusedWindowAttribute as CFString
@@ -52,7 +54,7 @@ enum SafariWindowService {
             try budget.check()
             let attributes = try readAttributes(window, names: [
                 kAXTitleAttribute, kAXIdentifierAttribute, kAXMainAttribute, "AXWindowNumber"
-            ])
+            ], budget: budget)
             guard let identifier = windowIdentifier(attributes: attributes, processIdentity: pid) else { continue }
             let windowTitle = attributes[kAXTitleAttribute] as? String ?? ""
             let cachedPath = cachedPaths[identifier].flatMap { $0.title == windowTitle ? $0.path : nil }
@@ -63,7 +65,7 @@ enum SafariWindowService {
                     nodeReads += 1
                     let values = try readAttributes(element, names: [
                         kAXRoleAttribute, kAXTitleAttribute, kAXDescriptionAttribute, kAXChildrenAttribute
-                    ])
+                    ], budget: budget)
                     return SafariTreeNode(role: values[kAXRoleAttribute] as? String,
                         title: values[kAXTitleAttribute] as? String,
                         description: values[kAXDescriptionAttribute] as? String,
@@ -280,12 +282,22 @@ enum SafariWindowService {
         return nil
     }
 
-    private static func accessibilityWindows(of application: AXUIElement) throws -> [AXUIElement] {
-        let result = AccessibilityClient.copyValue(
-            from: application,
-            attribute: kAXWindowsAttribute as CFString
+    private static func accessibilityWindows(
+        of application: AXUIElement, budget: SafariWindowScanBudget? = nil
+    ) throws -> [AXUIElement] {
+        let result: (status: AXError, value: [AXUIElement]?) = try SafariAXReadRetry.run(
+            initialTimeout: budget == nil ? 1 : 0.15,
+            retryTimeout: budget == nil ? nil : 0.45,
+            check: { if let budget { try budget.check() } },
+            read: { timeout in
+                AXUIElementSetMessagingTimeout(application, timeout)
+                let response = AccessibilityClient.copyValue(
+                    from: application, attribute: kAXWindowsAttribute as CFString
+                )
+                return (response.status, response.value as? [AXUIElement])
+            }
         )
-        guard result.status == .success, let windows = result.value as? [AXUIElement] else {
+        guard result.status == .success, let windows = result.value else {
             throw MiniToolsError.processingFailed(
                 "无法读取 Safari 窗口（错误码 \(result.status.rawValue)）"
             )
@@ -316,13 +328,26 @@ enum SafariWindowService {
         return nil
     }
 
-    private static func readAttributes(_ element: AXUIElement, names: [String], timeout: Float = 0.15) throws -> [String: Any] {
-        // Set a per-element timeout; the scan budget is a separate, cooperative whole-walk limit.
-        AXUIElementSetMessagingTimeout(element, timeout)
-        var output: CFArray?
-        let status = AXUIElementCopyMultipleAttributeValues(element, names as CFArray, [], &output)
-        guard status == .success, let values = output as? [Any] else {
-            throw MiniToolsError.processingFailed("无法读取 Safari 窗口（错误码 \(status.rawValue)），请重新打开刷新")
+    private static func readAttributes(
+        _ element: AXUIElement, names: [String], timeout: Float = 0.15,
+        budget: SafariWindowScanBudget? = nil
+    ) throws -> [String: Any] {
+        let result: (status: AXError, value: [Any]?) = try SafariAXReadRetry.run(
+            initialTimeout: timeout,
+            retryTimeout: budget == nil ? nil : 0.45,
+            check: { if let budget { try budget.check() } },
+            read: { timeout in
+                // The scan budget remains cooperative; it cannot interrupt a synchronous AX call.
+                AXUIElementSetMessagingTimeout(element, timeout)
+                var output: CFArray?
+                let status = AXUIElementCopyMultipleAttributeValues(element, names as CFArray, [], &output)
+                return (status, output as? [Any])
+            }
+        )
+        guard result.status == .success, let values = result.value else {
+            throw MiniToolsError.processingFailed(
+                "无法读取 Safari 窗口（错误码 \(result.status.rawValue)），请重新打开刷新"
+            )
         }
         return Dictionary(uniqueKeysWithValues: zip(names, values))
     }
