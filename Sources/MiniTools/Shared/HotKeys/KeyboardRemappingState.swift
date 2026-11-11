@@ -133,6 +133,7 @@ struct KeyboardRemappingState {
         case shortcutDown(UInt16)
         case shortcutUp(UInt16)
         case cancelShortcuts
+        case cancelInputSourceSwitch
         case sendControlShortcut(UInt16)
     }
 
