@@ -129,7 +129,7 @@ jobs:
           fi
       - name: Cache Swift dependencies and compatible build outputs
         if: steps.existing.outputs.reused != 'true'
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: .build
           key: release-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-${{ needs.prepare.outputs.candidate }}
