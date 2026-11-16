@@ -161,30 +161,6 @@ enum WindowGeometry {
         )
     }
 
-    static func nextTarget(
-        currentFrame: CGRect,
-        candidates: [CGRect],
-        tolerance: CGFloat = 10
-    ) -> CGRect? {
-        guard let first = candidates.first else { return nil }
-        guard candidates.count > 1 else { return first }
-
-        if let currentIndex = candidates.firstIndex(where: {
-            framesAreClose(currentFrame, $0, tolerance: tolerance)
-        }) {
-            return candidates[(currentIndex + 1) % candidates.count]
-        }
-
-        if let currentIndex = constrainedCandidateIndex(
-            currentFrame: currentFrame,
-            candidates: candidates,
-            tolerance: tolerance
-        ) {
-            return candidates[(currentIndex + 1) % candidates.count]
-        }
-        return first
-    }
-
     static func framesAreClose(_ lhs: CGRect, _ rhs: CGRect, tolerance: CGFloat) -> Bool {
         abs(lhs.minX - rhs.minX) <= tolerance
             && abs(lhs.minY - rhs.minY) <= tolerance
@@ -218,41 +194,6 @@ enum WindowGeometry {
             return nil
         }
         return targetFrame.size
-    }
-
-    private static func constrainedCandidateIndex(
-        currentFrame: CGRect,
-        candidates: [CGRect],
-        tolerance: CGFloat
-    ) -> Int? {
-        let components: [(CGRect) -> CGFloat] = [
-            { $0.minX }, { $0.minY }, { $0.width }, { $0.height }
-        ]
-        let varyingComponents = components.compactMap { component -> ((CGRect) -> CGFloat, CGFloat)? in
-            let values = candidates.map(component)
-            guard let minimum = values.min(), let maximum = values.max() else { return nil }
-            let spread = maximum - minimum
-            return spread > tolerance ? (component, spread) : nil
-        }
-        guard !varyingComponents.isEmpty else { return nil }
-
-        let center = CGPoint(x: currentFrame.midX, y: currentFrame.midY)
-        return candidates.firstIndex { candidate in
-            // 只有窗口确实位于该候选所在区域时才继续循环。窗口在别的区域
-            // 但尺寸恰好相近时（例如整块左半屏按右上区域快捷键），应当从
-            // 第一个候选（半宽）重新开始。
-            guard contains(center, in: candidate, margin: tolerance) else { return false }
-
-            return varyingComponents.allSatisfy { component, spread in
-                let allowedDifference = max(tolerance, spread * 0.1)
-                return abs(component(currentFrame) - component(candidate)) <= allowedDifference
-            }
-        }
-    }
-
-    private static func contains(_ point: CGPoint, in rect: CGRect, margin: CGFloat) -> Bool {
-        let inset = rect.insetBy(dx: margin, dy: margin)
-        return (inset.isEmpty ? rect : inset).contains(point)
     }
 
     static func appKitToAccessibility(_ rect: CGRect, primaryScreenMaxY: CGFloat) -> CGRect {

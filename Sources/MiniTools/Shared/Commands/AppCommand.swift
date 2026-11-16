@@ -4,6 +4,7 @@ enum AppCommand: Codable, Hashable, Identifiable, Sendable {
     case toggleLastFeaturePanel
     case showFeaturePanel(FeaturePanelKind)
     case windowControl(WindowControlID)
+    case composedWindowControl(ComposedWindowControlID)
 
     var id: String {
         switch self {
@@ -13,6 +14,8 @@ enum AppCommand: Codable, Hashable, Identifiable, Sendable {
             "panel.show.\(panel.rawValue)"
         case let .windowControl(control):
             "window.\(control.rawValue)"
+        case let .composedWindowControl(control):
+            "composed.\(control.rawValue)"
         }
     }
 
@@ -27,6 +30,8 @@ enum AppCommand: Codable, Hashable, Identifiable, Sendable {
         case let .windowControl(control):
             WindowControlCatalog.descriptors.first(where: { $0.id == control })?.title
                 ?? control.rawValue
+        case let .composedWindowControl(control):
+            ComposedWindowControlCatalog.descriptor(for: control)?.title ?? control.rawValue
         }
     }
 
@@ -38,6 +43,9 @@ enum AppCommand: Codable, Hashable, Identifiable, Sendable {
             "直接显示指定面板"
         case let .windowControl(control):
             WindowControlCatalog.descriptors.first(where: { $0.id == control })?.subtitle ?? ""
+        case let .composedWindowControl(control):
+            ComposedWindowControlCatalog.sizeTarget(for: control, press: .short)?.title
+                ?? ComposedWindowControlCatalog.descriptor(for: control)?.subtitle ?? ""
         }
     }
 
@@ -53,9 +61,9 @@ enum AppCommand: Codable, Hashable, Identifiable, Sendable {
             "cursorarrow.motionlines"
         case .windowControl(.moveWindowToNextScreen):
             "rectangle.portrait.and.arrow.forward"
-        case .windowControl(.centerWindow):
+        case .composedWindowControl(.centerPlacement):
             "rectangle.center.inset.filled"
-        case .windowControl:
+        case .composedWindowControl:
             "macwindow"
         }
     }
@@ -81,7 +89,9 @@ enum AppCommandCatalog {
         AppCommandSection(
             id: "window-layout",
             title: "窗口布局",
-            commands: WindowControlCatalog.windowLayoutIDs.map(AppCommand.windowControl)
+            commands: ComposedWindowControlCatalog.descriptors.map {
+                AppCommand.composedWindowControl($0.id)
+            }
         ),
         AppCommandSection(
             id: "cross-screen",

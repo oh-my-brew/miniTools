@@ -3,6 +3,19 @@ import XCTest
 @testable import MiniTools
 
 final class MouseBindingTests: XCTestCase {
+    func testCommandCatalogExposesOnlySizePositionAndCrossScreenActions() throws {
+        let layouts = try XCTUnwrap(AppCommandCatalog.sections.first(where: { $0.id == "window-layout" }))
+        XCTAssertEqual(layouts.commands, ComposedWindowControlCatalog.descriptors.map {
+            .composedWindowControl($0.id)
+        })
+        XCTAssertEqual(WindowControlID.allCases, [.moveWindowToNextScreen, .movePointerToNextScreen])
+        for command in layouts.commands {
+            XCTAssertEqual(try JSONDecoder().decode(AppCommand.self, from: JSONEncoder().encode(command)), command)
+            XCTAssertFalse(command.title.isEmpty)
+            XCTAssertFalse(command.subtitle.isEmpty)
+        }
+    }
+
     @MainActor
     func testMouseBindingsAreEmptyByDefaultAndPersistOnlyAssignedActions() throws {
         let suiteName = "MiniToolsTests.MouseBindings.\(UUID().uuidString)"

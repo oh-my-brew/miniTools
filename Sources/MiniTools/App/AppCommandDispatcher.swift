@@ -29,6 +29,11 @@ final class AppCommandDispatcher {
                 crossScreenPreservesLayout: settings.crossScreenPreservesLayout,
                 compatibleApplications: settings.windowCompatibilityApplications
             )
+        case let .composedWindowControl(control):
+            windowControlController.performComposed(
+                control, press: .short,
+                compatibleApplications: settings.windowCompatibilityApplications
+            )
         }
     }
 }

@@ -2,15 +2,13 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-/// 一次窗口操作命中的循环候选。
+/// 一次窗口操作的到位状态与统计信息。
 struct WindowActionOutcome: Equatable, Sendable {
-    let candidateIndex: Int
     let didReachTarget: Bool
     let statisticsID: String?
     let title: String?
 
-    init(candidateIndex: Int, didReachTarget: Bool, statisticsID: String? = nil, title: String? = nil) {
-        self.candidateIndex = candidateIndex
+    init(didReachTarget: Bool, statisticsID: String? = nil, title: String? = nil) {
         self.didReachTarget = didReachTarget
         self.statisticsID = statisticsID
         self.title = title
@@ -60,8 +58,6 @@ enum WindowLayoutService {
     }
 
     private enum Action: Sendable {
-        case layout(WindowLayoutCommand)
-        case center
         case nextScreen(preservingLayout: Bool)
 
         case composedSize(ComposedWindowSizeTarget)
@@ -69,8 +65,6 @@ enum WindowLayoutService {
 
         var id: String {
             switch self {
-            case .layout(let command): command.id.rawValue
-            case .center: WindowControlID.centerWindow.rawValue
             case .nextScreen: WindowControlID.moveWindowToNextScreen.rawValue
             case .composedSize(let target): "composed.\(target.statisticsID)"
             case .composedPlacement(let placement): "composed.position.\(placement)"
@@ -113,7 +107,6 @@ enum WindowLayoutService {
         // All AX elements and intent state are confined to queue.
         struct Intent {
             let window: AXUIElement
-            let command: String
             let target: CGRect
             let visible: CGRect
             let processID: pid_t
@@ -163,32 +156,18 @@ enum WindowLayoutService {
             let trace = WindowAdjustmentTrace(command: action.id, requestedAt: requestedAt)
             var lastFrame: CGRect?
             defer {
-                // Only a superseded pending intention can drive the next cycle.
-                // Completed, failed or manually restarted operations use actual geometry.
+                // Placement may finish a superseded size intention; completed or
+                // failed operations must return to the actual window geometry.
                 if gate.isCurrent(ticket) { intent = nil }
             }
             do {
-                // Count successive cycle presses even when their intermediate
-                // writes are superseded, without re-querying AX for every queued press.
-                if !gate.isCurrent(ticket), let pending = intent,
-                   pending.processID == frontmost,
-                   case .layout(let command) = action, command.id.rawValue == pending.command {
-                    let targets = command.frames.map { WindowGeometry.targetFrame(for: $0, in: pending.visible) }
-                    if let next = WindowGeometry.nextTarget(currentFrame: pending.target, candidates: targets) {
-                        intent = Intent(window: pending.window, command: pending.command, target: next,
-                                        visible: pending.visible, processID: pending.processID)
-                        trace.plan(initial: pending.target, target: next, visible: pending.visible)
-                        trace.event("coalescedPendingIntent")
-                        throw CancellationError()
-                    }
-                }
                 if !gate.isCurrent(ticket), let pending = intent,
                    pending.processID == frontmost,
                    case .composedPlacement(let placement) = action {
                     let positioned = WindowGeometry.composedPlacementTarget(
                         currentFrame: pending.target, visibleFrame: pending.visible, placement: placement
                     )
-                    intent = Intent(window: pending.window, command: action.id, target: positioned.frame,
+                    intent = Intent(window: pending.window, target: positioned.frame,
                                     visible: pending.visible, processID: pending.processID)
                     trace.plan(initial: pending.target, target: positioned.frame, visible: pending.visible)
                     trace.event("coalescedPendingPlacement")
@@ -232,26 +211,11 @@ enum WindowLayoutService {
                 let current = try read()
                 let visible = WindowGeometry.screenGeometry(for: current, geometries: geometries).visibleFrame
                 var target: CGRect
-                var candidateIndex = 0
                 var destination = visible
                 var allowsResize = true
                 var statisticsID: String?
                 var title: String?
                 switch action {
-                case .layout(let command):
-                    let targets = command.frames.map { WindowGeometry.targetFrame(for: $0, in: visible) }
-                    let cycleFrame: CGRect
-                    if let intent, CFEqual(intent.window, window), intent.command == action.id,
-                       intent.visible == visible {
-                        cycleFrame = intent.target
-                    } else {
-                        cycleFrame = current
-                    }
-                    guard let next = WindowGeometry.nextTarget(currentFrame: cycleFrame, candidates: targets) else {
-                        throw WindowLayoutError.unreadableWindowFrame
-                    }
-                    target = next
-                    candidateIndex = targets.firstIndex(of: next) ?? 0
                 case .composedSize(let size):
                     guard let planned = WindowGeometry.composedSizeTargetFrame(
                         currentFrame: current, size: size, visibleFrame: visible
@@ -261,7 +225,7 @@ enum WindowLayoutService {
                         trace.plan(initial: current, target: current, visible: visible)
                         trace.event("sizeAlreadyMatches")
                         trace.finish("unchangedSize", frame: current)
-                        return WindowActionOutcome(candidateIndex: 0, didReachTarget: false)
+                        return WindowActionOutcome(didReachTarget: false)
                     }
                     target = planned
                     trace.event("resizeAnchor.\(WindowGeometry.composedSizeAnchor(currentFrame: current, size: size, visibleFrame: visible))")
@@ -285,8 +249,6 @@ enum WindowLayoutService {
                     target = positioned.frame
                     statisticsID = positioned.statisticsID
                     title = positioned.title
-                case .center:
-                    target = WindowGeometry.centeredFrame(current, in: visible)
                 case .nextScreen(let preservingLayout):
                     guard geometries.count > 1 else { throw WindowLayoutError.notEnoughScreens }
                     let index = WindowGeometry.screenIndex(containing: current.center, geometries: geometries)
@@ -296,7 +258,7 @@ enum WindowLayoutService {
                         : WindowGeometry.frameByMoving(current, from: visible, to: destination)
                     trace.crossScreen(source: visible, mode: preservingLayout ? "proportional" : "absolute")
                 }
-                intent = Intent(window: window, command: action.id, target: target, visible: visible,
+                intent = Intent(window: window, target: target, visible: visible,
                                 processID: application.processIdentifier)
                 trace.plan(initial: current, target: target, visible: destination)
                 trace.event("resolved", frame: current)
@@ -359,8 +321,7 @@ enum WindowLayoutService {
                     processID: application.processIdentifier, ticket: ticket,
                     requestedAt: requestedAt, record: trace.snapshot(),
                     readAccessibility: policy == .compatible || windowID == nil))
-                return WindowActionOutcome(candidateIndex: candidateIndex,
-                                           didReachTarget: result.outcome == .applied,
+                return WindowActionOutcome(didReachTarget: result.outcome == .applied,
                                            statisticsID: statisticsID, title: title)
             } catch is CancellationError {
                 trace.finish("superseded", frame: lastFrame)
@@ -396,12 +357,6 @@ enum WindowLayoutService {
     }
 
     @MainActor
-    static func applyLayout(_ command: WindowLayoutCommand,
-                            compatibleApplications: Set<String> = WindowAdjustmentPolicy.defaultBundleIdentifiers) async throws -> WindowActionOutcome {
-        try await submit(.layout(command), compatibleApplications: compatibleApplications)
-    }
-
-    @MainActor
     static func applyComposedSize(
         _ target: ComposedWindowSizeTarget,
         compatibleApplications: Set<String> = WindowAdjustmentPolicy.defaultBundleIdentifiers
@@ -423,13 +378,6 @@ enum WindowLayoutService {
         compatibleApplications: Set<String> = WindowAdjustmentPolicy.defaultBundleIdentifiers
     ) async throws -> WindowActionOutcome {
         try await submit(.nextScreen(preservingLayout: preservingLayout), compatibleApplications: compatibleApplications)
-    }
-
-    @MainActor
-    static func centerFocusedWindow(
-        compatibleApplications: Set<String> = WindowAdjustmentPolicy.defaultBundleIdentifiers
-    ) async throws -> WindowActionOutcome {
-        try await submit(.center, compatibleApplications: compatibleApplications)
     }
 
     @MainActor
