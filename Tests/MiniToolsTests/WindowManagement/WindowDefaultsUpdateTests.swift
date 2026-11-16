@@ -27,12 +27,10 @@ final class WindowDefaultsUpdateTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         try store([.moveWindowToNextScreen: shortcut(kVK_ANSI_N),
-                   .movePointerToNextScreen: shortcut(kVK_ANSI_M),
-                   .upperLeft: shortcut(kVK_ANSI_A)], in: defaults)
+                   .movePointerToNextScreen: shortcut(kVK_ANSI_M)], in: defaults)
         let settings = AppSettings(defaults: defaults)
         XCTAssertEqual(settings.windowControlShortcut(for: .moveWindowToNextScreen), shortcut(kVK_ANSI_N))
         XCTAssertEqual(settings.windowControlShortcut(for: .movePointerToNextScreen), shortcut(kVK_ANSI_M))
-        XCTAssertEqual(settings.windowControlShortcut(for: .upperLeft), shortcut(kVK_ANSI_A))
         settings.updateWindowControlShortcut(shortcut(kVK_ANSI_P), for: .moveWindowToNextScreen)
         settings.updateWindowControlShortcut(shortcut(kVK_ANSI_Semicolon), for: .movePointerToNextScreen)
         let restored = AppSettings(defaults: defaults)

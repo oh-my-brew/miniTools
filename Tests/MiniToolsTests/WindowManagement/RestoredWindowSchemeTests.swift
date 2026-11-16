@@ -5,23 +5,20 @@ import XCTest
 
 @MainActor
 final class RestoredWindowSchemeTests: XCTestCase {
-    func testRestoredSchemeRequiresFreshOptInAndKeepsClassicBindings() throws {
-        let (defaults, suite) = try makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.set("sizeAndPosition", forKey: "windowManagementMode")
-        let settings = AppSettings(defaults: defaults)
-        XCTAssertEqual(settings.windowManagementMode, .classic)
-        XCTAssertEqual(settings.windowLongPressThresholdMilliseconds, 200)
-        let original = settings.windowControlShortcuts
-        settings.updateWindowManagementMode(.sizeAndPosition)
-        let shortcut = KeyboardShortcut(keyCode: UInt32(kVK_ANSI_M), carbonModifiers: UInt32(cmdKey | optionKey))
-        settings.updateComposedWindowControlShortcut(shortcut, for: .fullOrHalfHeight)
-        let restored = AppSettings(defaults: defaults)
-        XCTAssertEqual(restored.windowManagementMode, .sizeAndPosition)
-        XCTAssertEqual(restored.composedWindowControlShortcut(for: .fullOrHalfHeight), shortcut)
-        restored.updateWindowManagementMode(.classic)
-        XCTAssertEqual(restored.windowControlShortcuts, original)
-        XCTAssertEqual(AppSettings(defaults: defaults).windowManagementMode, .classic)
+    func testOnlySizeAndPositionSettingsRemainRegardlessOfStoredMode() throws {
+        for mode in ["classic", "sizeAndPosition"] {
+            let (defaults, suite) = try makeDefaults()
+            defer { defaults.removePersistentDomain(forName: suite) }
+            defaults.set(mode, forKey: "windowManagementModeV2")
+            let settings = AppSettings(defaults: defaults)
+            let shortcut = KeyboardShortcut(keyCode: UInt32(kVK_ANSI_M), carbonModifiers: UInt32(cmdKey | optionKey))
+            settings.updateComposedWindowControlShortcut(shortcut, for: .fullOrHalfHeight)
+            let restored = AppSettings(defaults: defaults)
+            XCTAssertEqual(restored.composedWindowControlShortcut(for: .fullOrHalfHeight), shortcut)
+            XCTAssertEqual(restored.windowLongPressThresholdMilliseconds, 200)
+            XCTAssertEqual(Set(restored.windowControlShortcuts.keys), Set(WindowControlCatalog.crossScreenIDs))
+            XCTAssertEqual(ComposedWindowControlCatalog.descriptors.count, 9)
+        }
     }
 
     func testThresholdPersistsAndClampsToSupportedRange() throws {

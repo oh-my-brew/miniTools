@@ -16,13 +16,6 @@ final class WindowControlController {
         crossScreenPreservesLayout: Bool = false,
         compatibleApplications: Set<String> = WindowAdjustmentPolicy.defaultBundleIdentifiers
     ) {
-        if let command = WindowControlCatalog.layoutCommand(for: id) {
-            performWindowAction(id: id) {
-                try await WindowLayoutService.applyLayout(command, compatibleApplications: compatibleApplications)
-            }
-            return
-        }
-
         switch id {
         case .moveWindowToNextScreen:
             performWindowAction(id: id) {
@@ -32,12 +25,6 @@ final class WindowControlController {
             }
         case .movePointerToNextScreen:
             movePointerToNextScreen(cursorHighlightStyles: cursorHighlightStyles)
-        case .centerWindow:
-            performWindowAction(id: id) {
-                try await WindowLayoutService.centerFocusedWindow(compatibleApplications: compatibleApplications)
-            }
-        default:
-            break
         }
     }
 
@@ -98,15 +85,9 @@ final class WindowControlController {
             do {
                 let outcome = try await action()
                 guard let self, outcome.didReachTarget else { return }
-                let title = WindowControlCatalog.targetTitle(
-                    for: id,
-                    candidateIndex: outcome.candidateIndex
-                )
+                let title = WindowControlCatalog.descriptors.first(where: { $0.id == id })?.title ?? id.rawValue
                 usageStatistics.record(
-                    id: WindowControlCatalog.statisticsID(
-                        for: id,
-                        candidateIndex: outcome.candidateIndex
-                    ),
+                    id: id.rawValue,
                     title: title,
                     category: .windowManagement
                 )

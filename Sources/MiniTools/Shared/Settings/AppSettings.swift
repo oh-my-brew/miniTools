@@ -9,8 +9,6 @@ final class AppSettings: ObservableObject {
         static let clipboardHistoryEnabled = "clipboardHistoryEnabled"
         static let clipboardHistoryRetention = "clipboardHistoryRetention"
         static let lastFeaturePanel = "lastFeaturePanel"
-        // Fresh opt-in: do not revive the removed scheme's old selected mode.
-        static let windowManagementMode = "windowManagementModeV2"
         static let composedWindowControlShortcuts = "composedWindowControlShortcuts"
         static let composedCornerResizeDefaultsMigrated = "composedCornerResizeDefaultsMigrated"
         static let windowLongPressThresholdMilliseconds = "windowLongPressThresholdMilliseconds"
@@ -42,7 +40,6 @@ final class AppSettings: ObservableObject {
     @Published private(set) var clipboardHistoryEnabled: Bool
     @Published private(set) var clipboardHistoryRetention: ClipboardHistoryRetention
     @Published private(set) var lastFeaturePanel: FeaturePanelKind
-    @Published private(set) var windowManagementMode: WindowManagementMode
     @Published private(set) var composedWindowControlShortcuts: [ComposedWindowControlID: KeyboardShortcut]
     @Published private(set) var windowLongPressThresholdMilliseconds: Int
     @Published private(set) var windowControlShortcuts: [WindowControlID: KeyboardShortcut]
@@ -84,8 +81,6 @@ final class AppSettings: ObservableObject {
             .map { Set($0.filter(WindowCompatibilityApplication.isValidBundleIdentifier)) }
             ?? WindowAdjustmentPolicy.defaultBundleIdentifiers
         crossScreenPreservesLayout = defaults.bool(forKey: Keys.crossScreenPreservesLayout)
-        windowManagementMode = defaults.string(forKey: Keys.windowManagementMode)
-            .flatMap(WindowManagementMode.init(rawValue:)) ?? .classic
         composedWindowControlShortcuts = Self.loadComposedWindowControlShortcuts(
             defaults: defaults
         )
@@ -277,12 +272,6 @@ final class AppSettings: ObservableObject {
         defaults.set(data, forKey: Keys.windowControlShortcuts)
     }
 
-    func updateWindowManagementMode(_ mode: WindowManagementMode) {
-        guard mode != windowManagementMode else { return }
-        windowManagementMode = mode
-        defaults.set(mode.rawValue, forKey: Keys.windowManagementMode)
-    }
-
     func updateComposedWindowControlShortcut(
         _ shortcut: KeyboardShortcut,
         for id: ComposedWindowControlID
@@ -470,11 +459,18 @@ final class AppSettings: ObservableObject {
     ) -> [MouseBindingKey: AppCommand] {
         guard
             let data = defaults.data(forKey: Keys.mouseBindings),
-            let stored = try? JSONDecoder().decode([MouseBinding].self, from: data)
+            let stored = try? JSONSerialization.jsonObject(with: data) as? [Any]
         else {
             return [:]
         }
-        return Dictionary(uniqueKeysWithValues: stored.map { ($0.key, $0.command) })
+        var bindings: [MouseBindingKey: AppCommand] = [:]
+        for item in stored {
+            guard let object = item as? [String: Any],
+                  let data = try? JSONSerialization.data(withJSONObject: object),
+                  let binding = try? JSONDecoder().decode(MouseBinding.self, from: data) else { continue }
+            bindings[binding.key] = binding.command
+        }
+        return bindings
     }
 
     private static func persistMouseBindings(

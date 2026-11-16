@@ -10,6 +10,9 @@ enum KeyboardRemappingRule: String, CaseIterable, Identifiable {
     case doubleRightCommand
     case homerowControlShortcuts
     case ghosttyControlShortcut
+    case f10Mute
+    case f11VolumeDown
+    case f12VolumeUp
 
     var id: String { rawValue }
 
@@ -23,6 +26,9 @@ enum KeyboardRemappingRule: String, CaseIterable, Identifiable {
         case .doubleRightCommand: "双击右 Command → Codex"
         case .homerowControlShortcuts: "Homerow：Caps Lock / ⌃⌥⇧⌘ + M、,、. → ⌃+同键"
         case .ghosttyControlShortcut: "Ghostty：Caps Lock / ⌃⌥⇧⌘ + / → ⌃/"
+        case .f10Mute: "F10 → 静音"
+        case .f11VolumeDown: "F11 → 音量 −"
+        case .f12VolumeUp: "F12 → 音量 +"
         }
     }
 
@@ -32,6 +38,34 @@ enum KeyboardRemappingRule: String, CaseIterable, Identifiable {
             return true
         }
         return enabled.contains(.ghosttyControlShortcut) && code == UInt16(kVK_ANSI_Slash)
+    }
+}
+
+enum SystemMediaKey: Int, CaseIterable, Sendable {
+    case volumeUp = 0
+    case volumeDown = 1
+    case mute = 7
+
+    var rule: KeyboardRemappingRule {
+        switch self {
+        case .mute: .f10Mute
+        case .volumeDown: .f11VolumeDown
+        case .volumeUp: .f12VolumeUp
+        }
+    }
+
+    var functionKeyCode: UInt16 {
+        switch self {
+        case .mute: UInt16(kVK_F10)
+        case .volumeDown: UInt16(kVK_F11)
+        case .volumeUp: UInt16(kVK_F12)
+        }
+    }
+
+    // NX system-defined auxiliary key payload: flavor, key state, repeat.
+    func eventData(isDown: Bool, isRepeat: Bool) -> Int {
+        (rawValue << 16) | ((isDown ? 0xA : 0xB) << 8)
+            | (isDown && isRepeat ? 1 : 0)
     }
 }
 
@@ -135,6 +169,7 @@ struct KeyboardRemappingState {
         case cancelShortcuts
         case cancelInputSourceSwitch
         case sendControlShortcut(UInt16)
+        case sendMediaKey(SystemMediaKey, isRepeat: Bool)
     }
 
     struct Result {
@@ -154,6 +189,7 @@ struct KeyboardRemappingState {
     private var capsTapBlockReason: CapsTapBlockReason?
     private var consumedCapsKeys: Set<UInt16> = []
     private var consumedKeyUps: Set<UInt16> = []
+    private var consumedMediaKeys: [UInt16: SystemMediaKey] = [:]
     private var rightCommandHeld = false
     private var previousRightCommandRelease: TimeInterval?
     private var rightCommandChord = false
@@ -164,6 +200,7 @@ struct KeyboardRemappingState {
         capsTapBlockReason = nil
         consumedCapsKeys.removeAll()
         consumedKeyUps.removeAll()
+        consumedMediaKeys.removeAll()
         rightCommandHeld = false
         previousRightCommandRelease = nil
         rightCommandChord = false
@@ -207,6 +244,10 @@ struct KeyboardRemappingState {
             capsUsed = true
             if capsTapBlockReason == nil { capsTapBlockReason = .otherKey }
         }
+        if let key = consumedMediaKeys[code] {
+            let shouldRepeat = key != .mute && isRepeat && modifiers.isEmpty && !capsHeld
+            return .handled(shouldRepeat ? .sendMediaKey(key, isRepeat: true) : nil)
+        }
         if consumedCapsKeys.contains(code) || consumedKeyUps.contains(code) {
             return .handled()
         }
@@ -244,10 +285,20 @@ struct KeyboardRemappingState {
             consumedKeyUps.insert(code)
             return .handled(isRepeat ? nil : .hideSafari)
         }
+        if !capsHeld, modifiers.isEmpty, !isRepeat,
+           let key = SystemMediaKey.allCases.first(where: {
+               $0.functionKeyCode == code && enabled.contains($0.rule)
+           }) {
+            consumedMediaKeys[code] = key
+            return .handled(.sendMediaKey(key, isRepeat: false))
+        }
         return .pass
     }
 
     mutating func keyUp(_ code: UInt16) -> Result {
+        if consumedMediaKeys.removeValue(forKey: code) != nil {
+            return .handled()
+        }
         if consumedCapsKeys.remove(code) != nil {
             return .handled(capsHeld ? .shortcutUp(code) : nil)
         }

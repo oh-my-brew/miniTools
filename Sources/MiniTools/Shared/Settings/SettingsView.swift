@@ -275,7 +275,7 @@ private struct SettingsCategoryDetail: View {
         } header: {
             Text("按键映射")
         } footer: {
-            Text("各项默认关闭。启用前请关闭 Karabiner 中相同的映射。Caps Lock 前缀与单按切换输入法可分别开启：仅单按时在英文布局与上次使用的输入法之间切换，组合键不会切换。启用前须在「系统设置 → 键盘 → 文字输入 → 编辑」关闭系统的 Caps Lock 切换输入法选项；miniTools 不修改系统设置。按住 Caps Lock 可触发 miniTools 快捷键；另行开启 Homerow 或 Ghostty 时，Caps Lock + M、,、.、/ 可发送对应的 Control 组合。")
+            Text("各项默认关闭。启用前请关闭 Karabiner 中相同的映射。F10/F11/F12 规则只处理无 Command、Option、Control、Shift 的功能键事件；音量减/加可按住连续调整，静音每次按压只切换一次。若键盘已直接发送音量键，系统行为保持原样。Caps Lock 前缀与单按切换输入法可分别开启：仅单按时在英文布局与上次使用的输入法之间切换，组合键不会切换。启用前须在「系统设置 → 键盘 → 文字输入 → 编辑」关闭系统的 Caps Lock 切换输入法选项；miniTools 不修改系统设置。按住 Caps Lock 可触发 miniTools 快捷键；另行开启 Homerow 或 Ghostty 时，Caps Lock + M、,、.、/ 可发送对应的 Control 组合。")
         }
 
         if settings.keyboardRemappingRules.contains(.capsInputSourceSwitch),
@@ -341,95 +341,47 @@ private struct SettingsCategoryDetail: View {
 
     @ViewBuilder
     private var windowManagementSettings: some View {
-        Section {
-            Picker(
-                "窗口布局方案",
-                selection: Binding(
-                    get: { settings.windowManagementMode.rawValue },
-                    set: { rawValue in
-                        guard let mode = WindowManagementMode(rawValue: rawValue) else { return }
-                        shortcutCoordinator.updateWindowManagementMode(mode)
-                    }
+        Section("长按") {
+            LabeledContent {
+                HStack(spacing: 10) {
+                    Slider(
+                        value: Binding(
+                            get: {
+                                Double(settings.windowLongPressThresholdMilliseconds)
+                            },
+                            set: { value in
+                                shortcutCoordinator
+                                    .updateWindowLongPressThresholdMilliseconds(Int(value))
+                            }
+                        ),
+                        in: Double(HotKeyLongPressRecognizer.minimumThresholdMilliseconds)...Double(HotKeyLongPressRecognizer.maximumThresholdMilliseconds),
+                        step: Double(HotKeyLongPressRecognizer.thresholdStepMilliseconds)
+                    )
+                    .frame(width: 170)
+                    Text("\(settings.windowLongPressThresholdMilliseconds)ms")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 52, alignment: .trailing)
+                }
+            } label: {
+                settingsLabel(
+                    title: "长按触发时间",
+                    subtitle: "用于全宽、满高窄窗和半高窄窗的长按尺寸动作"
                 )
-            ) {
-                Text(WindowManagementMode.classic.title)
-                    .tag(WindowManagementMode.classic.rawValue)
-                Text(WindowManagementMode.sizeAndPosition.title)
-                    .tag(WindowManagementMode.sizeAndPosition.rawValue)
             }
-            .pickerStyle(.segmented)
-            .frame(width: 320)
-        } header: {
-            Text("布局方案")
-        } footer: {
-            Text("经典布局按区域直接调整；尺寸与位置方案先选择窗口大小，再用 U/H/O/L 对齐四角，或用 Return 居中；尺寸已符合目标时保持当前位置；改变尺寸时，当前为全屏大小或未贴边则居中，其余保持已贴边的角（8pt 容差）。")
         }
 
-        if settings.windowManagementMode == .classic {
-            Section("四角") {
-                ForEach(
-                    windowDescriptors([.upperLeft, .upperRight, .lowerLeft, .lowerRight])
-                ) { descriptor in
-                    windowControlRow(descriptor)
-                }
+        Section("窗口尺寸") {
+            ForEach(composedWindowDescriptors(ComposedWindowControlCatalog.sizeIDs)) {
+                descriptor in
+                composedWindowControlRow(descriptor)
             }
+        }
 
-            Section("边缘与尺寸") {
-                ForEach(
-                    windowDescriptors([.left, .right, .horizontalHalves, .verticalThirds])
-                ) { descriptor in
-                    windowControlRow(descriptor)
-                }
-            }
-
-            Section("其他") {
-                ForEach(windowDescriptors([.maximize, .centerWindow])) { descriptor in
-                    windowControlRow(descriptor)
-                }
-            }
-        } else {
-            Section("长按") {
-                LabeledContent {
-                    HStack(spacing: 10) {
-                        Slider(
-                            value: Binding(
-                                get: {
-                                    Double(settings.windowLongPressThresholdMilliseconds)
-                                },
-                                set: { value in
-                                    shortcutCoordinator
-                                        .updateWindowLongPressThresholdMilliseconds(Int(value))
-                                }
-                            ),
-                            in: Double(HotKeyLongPressRecognizer.minimumThresholdMilliseconds)...Double(HotKeyLongPressRecognizer.maximumThresholdMilliseconds),
-                            step: Double(HotKeyLongPressRecognizer.thresholdStepMilliseconds)
-                        )
-                        .frame(width: 170)
-                        Text("\(settings.windowLongPressThresholdMilliseconds)ms")
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .frame(width: 52, alignment: .trailing)
-                    }
-                } label: {
-                    settingsLabel(
-                        title: "长按触发时间",
-                        subtitle: "用于全宽、满高窄窗和半高窄窗的长按尺寸动作"
-                    )
-                }
-            }
-
-            Section("窗口尺寸") {
-                ForEach(composedWindowDescriptors(ComposedWindowControlCatalog.sizeIDs)) {
-                    descriptor in
-                    composedWindowControlRow(descriptor)
-                }
-            }
-
-            Section("窗口位置") {
-                ForEach(composedWindowDescriptors(ComposedWindowControlCatalog.placementIDs)) {
-                    descriptor in
-                    composedWindowControlRow(descriptor)
-                }
+        Section("窗口位置") {
+            ForEach(composedWindowDescriptors(ComposedWindowControlCatalog.placementIDs)) {
+                descriptor in
+                composedWindowControlRow(descriptor)
             }
         }
 
@@ -451,9 +403,7 @@ private struct SettingsCategoryDetail: View {
         } footer: {
             HStack {
                 Text(
-                    settings.windowManagementMode == .sizeAndPosition
-                        ? "长按时间和快捷键修改后立即生效；窗口操作需要辅助功能权限。"
-                        : "快捷键修改后立即生效。窗口操作需要辅助功能权限。"
+                    "长按时间和快捷键修改后立即生效；窗口操作需要辅助功能权限。"
                 )
                 Spacer()
                 Button("恢复默认快捷键") {
@@ -673,14 +623,6 @@ private struct SettingsCategoryDetail: View {
         case true: "阻止睡眠（SleepDisabled = 1）"
         case false: "允许睡眠（SleepDisabled = 0）"
         case nil: "未知"
-        }
-    }
-
-    private func windowDescriptors(
-        _ ids: [WindowControlID]
-    ) -> [WindowControlDescriptor] {
-        ids.compactMap { id in
-            WindowControlCatalog.descriptors.first(where: { $0.id == id })
         }
     }
 

@@ -1,20 +1,6 @@
 import Carbon
 import CoreGraphics
 
-enum WindowManagementMode: String, CaseIterable, Codable, Identifiable, Sendable {
-    case classic
-    case sizeAndPosition
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .classic: "经典布局"
-        case .sizeAndPosition: "尺寸与位置"
-        }
-    }
-}
-
 enum ComposedWindowControlID: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
     case fullOrHalfHeight
     case twoThirdsWidth

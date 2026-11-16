@@ -81,6 +81,7 @@ final class KeyboardRemappingMonitor {
     private var capsSwitchGeneration = 0
     private var capsPhysicalHeld = false
     private(set) var capsAvailable = false
+    private(set) var generation: UInt64 = 0
     private static let postedMarker: Int64 = 0x4D54_524D_4150
 
     init(
@@ -131,6 +132,7 @@ final class KeyboardRemappingMonitor {
     }
 
     func stop() {
+        generation &+= 1
         capsSwitchGeneration += 1
         capsSwitchGate.cancel()
         if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: false) }
@@ -213,6 +215,7 @@ final class KeyboardRemappingMonitor {
 
     fileprivate func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            generation &+= 1
             capsSwitchGeneration += 1
             capsSwitchGate.cancel()
             if let original = capsLatch.cancel() { _ = capsSystem?.set(original) }
@@ -285,6 +288,22 @@ final class KeyboardRemappingMonitor {
 
     static func postControlShortcut(_ code: UInt16) {
         postShortcut(code, modifiers: .control)
+    }
+
+    static func postMediaKey(_ key: SystemMediaKey, isRepeat: Bool) {
+        let events = [true, false].compactMap { isDown in
+            NSEvent.otherEvent(
+                with: .systemDefined, location: .zero,
+                modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: 0, context: nil, subtype: 8,
+                data1: key.eventData(isDown: isDown, isRepeat: isRepeat), data2: -1
+            )?.cgEvent
+        }
+        guard events.count == 2 else { return }
+        for event in events {
+            event.setIntegerValueField(.eventSourceUserData, value: postedMarker)
+            event.post(tap: .cghidEventTap)
+        }
     }
 
     private static func postShortcut(
