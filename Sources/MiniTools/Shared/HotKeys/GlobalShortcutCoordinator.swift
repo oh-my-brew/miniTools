@@ -46,8 +46,6 @@ final class GlobalShortcutCoordinator: ObservableObject {
         for (index, descriptor) in WindowControlCatalog.descriptors.enumerated() {
             let id = descriptor.id
             windowControlHotKeys[id] = GlobalHotKey(identifier: UInt32(100 + index)) {
-                guard WindowControlCatalog.crossScreenIDs.contains(id)
-                        || settings.windowManagementMode == .classic else { return }
                 performWindowControl(id)
             }
         }
@@ -59,11 +57,9 @@ final class GlobalShortcutCoordinator: ObservableObject {
                 let recognizer = HotKeyLongPressRecognizer(
                     threshold: .milliseconds(settings.windowLongPressThresholdMilliseconds),
                     onShortPress: {
-                        guard settings.windowManagementMode == .sizeAndPosition else { return }
                         performComposedWindowControl(id, .short)
                     },
                     onLongPress: {
-                        guard settings.windowManagementMode == .sizeAndPosition else { return }
                         performComposedWindowControl(id, .long)
                     }
                 )
@@ -71,14 +67,12 @@ final class GlobalShortcutCoordinator: ObservableObject {
                 composedWindowControlHotKeys[id] = GlobalHotKey(
                     identifier: identifier,
                     onPressed: {
-                        guard settings.windowManagementMode == .sizeAndPosition else { return }
                         recognizer.press()
                     },
                     onReleased: recognizer.release
                 )
             } else {
                 composedWindowControlHotKeys[id] = GlobalHotKey(identifier: identifier) {
-                    guard settings.windowManagementMode == .sizeAndPosition else { return }
                     performComposedWindowControl(id, .short)
                 }
             }
@@ -109,6 +103,7 @@ final class GlobalShortcutCoordinator: ObservableObject {
             self.remappingActivationObserver = nil
         }
         cancelLongPresses()
+        WindowLayoutService.cancelPendingAdjustments()
         panelHotKey.unregister()
         clipboardHistoryHotKey.unregister()
         for hotKey in windowControlHotKeys.values {
@@ -174,20 +169,10 @@ final class GlobalShortcutCoordinator: ObservableObject {
         if settings.panelShortcut.carbonModifiers == hyper, panelError == nil {
             codes.insert(UInt16(settings.panelShortcut.keyCode))
         }
-        switch settings.windowManagementMode {
-        case .classic:
-            for id in WindowControlCatalog.windowLayoutIDs {
-                let shortcut = settings.windowControlShortcut(for: id)
-                if shortcut.carbonModifiers == hyper, windowControlErrors[id] == nil {
-                    codes.insert(UInt16(shortcut.keyCode))
-                }
-            }
-        case .sizeAndPosition:
-            for id in ComposedWindowControlCatalog.descriptors.map(\.id) {
-                let shortcut = settings.composedWindowControlShortcut(for: id)
-                if shortcut.carbonModifiers == hyper, composedWindowControlErrors[id] == nil {
-                    codes.insert(UInt16(shortcut.keyCode))
-                }
+        for id in ComposedWindowControlCatalog.descriptors.map(\.id) {
+            let shortcut = settings.composedWindowControlShortcut(for: id)
+            if shortcut.carbonModifiers == hyper, composedWindowControlErrors[id] == nil {
+                codes.insert(UInt16(shortcut.keyCode))
             }
         }
         for id in WindowControlCatalog.crossScreenIDs {
@@ -208,6 +193,14 @@ final class GlobalShortcutCoordinator: ObservableObject {
         case let .sendControlShortcut(code):
             DispatchQueue.main.async {
                 KeyboardRemappingMonitor.postControlShortcut(code)
+            }
+        case let .sendMediaKey(key, isRepeat):
+            let generation = remappingMonitor.generation
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.remappingMonitor.isRunning,
+                      self.remappingMonitor.generation == generation,
+                      self.settings.keyboardRemappingRules.contains(key.rule) else { return }
+                KeyboardRemappingMonitor.postMediaKey(key, isRepeat: isRepeat)
             }
         case .hideSafari:
             DispatchQueue.main.async { [weak self] in
@@ -321,30 +314,19 @@ final class GlobalShortcutCoordinator: ObservableObject {
             if pressed { panelHotKey.onPressed() }
             return
         }
-        if settings.windowManagementMode == .classic {
-            for id in WindowControlCatalog.windowLayoutIDs {
-                if matches(settings.windowControlShortcut(for: id)),
-                   windowControlErrors[id] == nil,
-                   let key = windowControlHotKeys[id] {
-                    if pressed { key.onPressed() }
-                    return
-                }
-            }
-        } else {
-            for descriptor in ComposedWindowControlCatalog.descriptors {
-                if matches(settings.composedWindowControlShortcut(for: descriptor.id)),
-                   composedWindowControlErrors[descriptor.id] == nil,
-                   let key = composedWindowControlHotKeys[descriptor.id] {
-                    if descriptor.supportsLongPress {
-                        if pressed {
-                            capsLongPressIDs.insert(descriptor.id)
-                        } else {
-                            capsLongPressIDs.remove(descriptor.id)
-                        }
+        for descriptor in ComposedWindowControlCatalog.descriptors {
+            if matches(settings.composedWindowControlShortcut(for: descriptor.id)),
+               composedWindowControlErrors[descriptor.id] == nil,
+               let key = composedWindowControlHotKeys[descriptor.id] {
+                if descriptor.supportsLongPress {
+                    if pressed {
+                        capsLongPressIDs.insert(descriptor.id)
+                    } else {
+                        capsLongPressIDs.remove(descriptor.id)
                     }
-                    if pressed { key.onPressed() } else { key.onReleased?() }
-                    return
                 }
+                if pressed { key.onPressed() } else { key.onReleased?() }
+                return
             }
         }
         for id in WindowControlCatalog.crossScreenIDs {
@@ -383,15 +365,6 @@ final class GlobalShortcutCoordinator: ObservableObject {
         return true
     }
 
-    func updateWindowManagementMode(_ mode: WindowManagementMode) {
-        guard mode != settings.windowManagementMode else { return }
-        deactivateLayoutShortcuts()
-        WindowLayoutService.cancelPendingAdjustments()
-        settings.updateWindowManagementMode(mode)
-        registerActiveLayoutShortcuts()
-        onStateChanged?()
-    }
-
     func updateWindowLongPressThresholdMilliseconds(_ milliseconds: Int) {
         settings.updateWindowLongPressThresholdMilliseconds(milliseconds)
         let threshold: Duration = .milliseconds(settings.windowLongPressThresholdMilliseconds)
@@ -406,14 +379,10 @@ final class GlobalShortcutCoordinator: ObservableObject {
         _ shortcut: KeyboardShortcut,
         for id: WindowControlID
     ) -> Bool {
-        let isActive = WindowControlCatalog.crossScreenIDs.contains(id)
-            || settings.windowManagementMode == .classic
-        if isActive {
-            guard let hotKey = windowControlHotKeys[id], hotKey.register(shortcut) == noErr else {
-                windowControlErrors[id] = conflictMessage(name: "窗口控制", shortcut: shortcut)
-                onStateChanged?()
-                return false
-            }
+        guard let hotKey = windowControlHotKeys[id], hotKey.register(shortcut) == noErr else {
+            windowControlErrors[id] = conflictMessage(name: "窗口控制", shortcut: shortcut)
+            onStateChanged?()
+            return false
         }
         windowControlErrors[id] = nil
         settings.updateWindowControlShortcut(shortcut, for: id)
@@ -427,18 +396,16 @@ final class GlobalShortcutCoordinator: ObservableObject {
         for id: ComposedWindowControlID
     ) -> Bool {
         longPressRecognizers[id]?.cancel()
-        if settings.windowManagementMode == .sizeAndPosition {
-            guard
-                let hotKey = composedWindowControlHotKeys[id],
-                hotKey.register(shortcut) == noErr
-            else {
-                composedWindowControlErrors[id] = conflictMessage(
-                    name: "窗口控制",
-                    shortcut: shortcut
-                )
-                onStateChanged?()
-                return false
-            }
+        guard
+            let hotKey = composedWindowControlHotKeys[id],
+            hotKey.register(shortcut) == noErr
+        else {
+            composedWindowControlErrors[id] = conflictMessage(
+                name: "窗口控制",
+                shortcut: shortcut
+            )
+            onStateChanged?()
+            return false
         }
         composedWindowControlErrors[id] = nil
         settings.updateComposedWindowControlShortcut(shortcut, for: id)
@@ -451,26 +418,12 @@ final class GlobalShortcutCoordinator: ObservableObject {
             windowControlHotKeys[id]?.unregister()
         }
 
-        switch settings.windowManagementMode {
-        case .classic:
-            for id in WindowControlCatalog.windowLayoutIDs {
-                windowControlHotKeys[id]?.unregister()
-            }
-            for id in WindowControlCatalog.windowLayoutIDs {
-                guard let shortcut = WindowControlCatalog.defaultShortcuts[id] else { continue }
-                _ = updateWindowControlShortcut(shortcut, for: id)
-            }
-        case .sizeAndPosition:
-            cancelLongPresses()
-            for hotKey in composedWindowControlHotKeys.values {
-                hotKey.unregister()
-            }
-            for descriptor in ComposedWindowControlCatalog.descriptors {
-                _ = updateComposedWindowControlShortcut(
-                    descriptor.defaultShortcut,
-                    for: descriptor.id
-                )
-            }
+        cancelLongPresses()
+        for hotKey in composedWindowControlHotKeys.values {
+            hotKey.unregister()
+        }
+        for descriptor in ComposedWindowControlCatalog.descriptors {
+            _ = updateComposedWindowControlShortcut(descriptor.defaultShortcut, for: descriptor.id)
         }
 
         for id in WindowControlCatalog.crossScreenIDs {
@@ -509,30 +462,9 @@ final class GlobalShortcutCoordinator: ObservableObject {
     }
 
     private func registerActiveLayoutShortcuts() {
-        switch settings.windowManagementMode {
-        case .classic:
-            for id in WindowControlCatalog.windowLayoutIDs {
-                registerInitialWindowControlShortcut(for: id)
-            }
-        case .sizeAndPosition:
-            for descriptor in ComposedWindowControlCatalog.descriptors {
-                registerInitialComposedWindowControlShortcut(for: descriptor.id)
-            }
+        for descriptor in ComposedWindowControlCatalog.descriptors {
+            registerInitialComposedWindowControlShortcut(for: descriptor.id)
         }
-    }
-
-    private func deactivateLayoutShortcuts() {
-        cancelLongPresses()
-        for id in WindowControlCatalog.windowLayoutIDs {
-            windowControlHotKeys[id]?.unregister()
-        }
-        for hotKey in composedWindowControlHotKeys.values {
-            hotKey.unregister()
-        }
-        windowControlErrors = windowControlErrors.filter {
-            WindowControlCatalog.crossScreenIDs.contains($0.key)
-        }
-        composedWindowControlErrors.removeAll()
     }
 
     private func registerInitialWindowControlShortcut(for id: WindowControlID) {

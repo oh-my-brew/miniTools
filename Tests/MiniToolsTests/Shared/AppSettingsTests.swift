@@ -144,47 +144,55 @@ final class AppSettingsTests: XCTestCase {
             carbonModifiers: UInt32(controlKey | optionKey)
         )
 
-        settings.updateWindowControlShortcut(shortcut, for: .centerWindow)
+        settings.updateWindowControlShortcut(shortcut, for: .moveWindowToNextScreen)
 
         let restored = AppSettings(defaults: defaults)
-        XCTAssertEqual(restored.windowControlShortcut(for: .centerWindow), shortcut)
+        XCTAssertEqual(restored.windowControlShortcut(for: .moveWindowToNextScreen), shortcut)
     }
 
     @MainActor
-    func testRetiredLayoutSettingsDoNotOverrideClassicShortcutsOrMouseBindings() throws {
+    func testClassicPreferencesAreIgnoredWithoutDiscardingOtherMouseBindings() throws {
         let (defaults, suiteName) = try makeDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let shortcut = KeyboardShortcut(
-            keyCode: UInt32(kVK_ANSI_M),
-            carbonModifiers: UInt32(controlKey | optionKey)
-        )
+        let shortcut = KeyboardShortcut(keyCode: UInt32(kVK_ANSI_M), carbonModifiers: UInt32(controlKey | optionKey))
+        defaults.set(try JSONEncoder().encode([
+            "upperLeft": shortcut, "moveWindowToNextScreen": shortcut
+        ]), forKey: "windowControlShortcuts")
         let settings = AppSettings(defaults: defaults)
-        settings.updateWindowControlShortcut(shortcut, for: .upperLeft)
-        settings.updateWindowControlShortcut(shortcut, for: .moveWindowToNextScreen)
-
-        settings.updateMouseCommand(
-            .windowControl(.upperLeft),
-            for: .button4,
-            gesture: .singleClick
-        )
-
-        // A previous installation selected the removed scheme and configured long press.
-        defaults.set("sizeAndPosition", forKey: "windowManagementMode")
-        defaults.set(600, forKey: "windowLongPressThresholdMilliseconds")
-        defaults.set(
-            try JSONEncoder().encode(["fullOrHalfHeight": KeyboardShortcut.panelDefault]),
-            forKey: "composedWindowControlShortcuts"
-        )
-
+        settings.updateComposedWindowControlShortcut(shortcut, for: .fullOrHalfHeight)
+        settings.updateWindowLongPressThresholdMilliseconds(600)
+        settings.updateMouseCommand(.windowControl(.moveWindowToNextScreen), for: .button4, gesture: .doubleClick)
+        settings.updateMouseCommand(.showFeaturePanel(.safariWindows), for: .button5, gesture: .singleClick)
+        settings.updateMouseCommand(.composedWindowControl(.lowerRightPlacement), for: .button5, gesture: .dragRight)
+        let valid = try XCTUnwrap(defaults.data(forKey: "mouseBindings"))
+        var raw = try XCTUnwrap(JSONSerialization.jsonObject(with: valid) as? [[String: Any]])
+        for (index, retired) in ["upperLeft", "centerWindow", "maximize"].enumerated() {
+            raw.insert(["button": 3, "gesture": ["singleClick", "dragUp", "dragDown"][index],
+                        "command": ["windowControl": ["_0": retired]]], at: index)
+        }
+        defaults.set(try JSONSerialization.data(withJSONObject: raw), forKey: "mouseBindings")
+        defaults.set("classic", forKey: "windowManagementModeV2")
         let restored = AppSettings(defaults: defaults)
-        XCTAssertEqual(restored.windowControlShortcut(for: .upperLeft), shortcut)
-        XCTAssertEqual(restored.windowControlShortcut(for: .moveWindowToNextScreen), shortcut)
-        XCTAssertEqual(
-            restored.windowControlShortcut(for: .lowerRight),
-            WindowControlCatalog.defaultShortcuts[.lowerRight]
-        )
         XCTAssertEqual(restored.mouseBindings, settings.mouseBindings)
+        XCTAssertEqual(restored.windowControlShortcuts.keys.count, 2)
+        XCTAssertEqual(restored.windowControlShortcut(for: .moveWindowToNextScreen), shortcut)
+        XCTAssertEqual(restored.composedWindowControlShortcut(for: .fullOrHalfHeight), shortcut)
+        XCTAssertEqual(restored.windowLongPressThresholdMilliseconds, 600)
         XCTAssertEqual(restored.cursorHighlightStyles, settings.cursorHighlightStyles)
+        restored.updateMouseCommand(.composedWindowControl(.centerPlacement), for: .button4, gesture: .singleClick)
+        XCTAssertEqual(AppSettings(defaults: defaults).mouseBindings, restored.mouseBindings)
+    }
+
+    @MainActor
+    func testVolumeRulesDefaultOffAndPersistIndependently() throws {
+        let (defaults, suiteName) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults)
+        let rules: Set<KeyboardRemappingRule> = [.f10Mute, .f11VolumeDown, .f12VolumeUp]
+        XCTAssertTrue(settings.keyboardRemappingRules.isDisjoint(with: rules))
+        for rule in rules { settings.updateKeyboardRemappingRule(rule, enabled: true) }
+        settings.updateKeyboardRemappingRule(.f11VolumeDown, enabled: false)
+        XCTAssertEqual(AppSettings(defaults: defaults).keyboardRemappingRules, [.f10Mute, .f12VolumeUp])
     }
 
     @MainActor

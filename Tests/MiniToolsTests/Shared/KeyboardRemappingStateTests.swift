@@ -3,6 +3,85 @@ import XCTest
 @testable import MiniTools
 
 final class KeyboardRemappingStateTests: XCTestCase {
+    func testFunctionKeysOnlyMapWhenTheirIndividualRuleIsEnabled() {
+        for key in SystemMediaKey.allCases {
+            var state = KeyboardRemappingState()
+            XCTAssertFalse(state.keyDown(key.functionKeyCode, modifiers: [], isRepeat: false,
+                                         safariFrontmost: false).consume)
+            state.enabled = [key.rule]
+            let result = state.keyDown(key.functionKeyCode, modifiers: [], isRepeat: false,
+                                       safariFrontmost: false)
+            XCTAssertTrue(result.consume)
+            XCTAssertEqual(result.actions, [.sendMediaKey(key, isRepeat: false)])
+            for other in SystemMediaKey.allCases where other != key {
+                XCTAssertFalse(state.keyDown(other.functionKeyCode, modifiers: [], isRepeat: false,
+                                             safariFrontmost: false).consume)
+            }
+            XCTAssertTrue(state.keyUp(key.functionKeyCode).consume)
+            XCTAssertFalse(state.keyUp(key.functionKeyCode).consume)
+        }
+    }
+
+    func testModifiedFunctionKeysAndCapsChordsDoNotChangeVolume() {
+        for key in SystemMediaKey.allCases {
+            var state = KeyboardRemappingState()
+            state.enabled = [key.rule, .capsShortcuts, .capsInputSourceSwitch]
+            let modifiedChords: [KeyboardRemappingState.Modifiers] = [
+                .command, .shift, .option, .control, .hyper
+            ]
+            for modifiers in modifiedChords {
+                XCTAssertFalse(state.keyDown(key.functionKeyCode, modifiers: modifiers, isRepeat: false,
+                                             safariFrontmost: false).consume)
+                XCTAssertFalse(state.keyUp(key.functionKeyCode).consume)
+            }
+            _ = state.capsChanged(down: true)
+            XCTAssertFalse(state.keyDown(key.functionKeyCode, modifiers: [], isRepeat: false,
+                                         safariFrontmost: false).consume)
+            XCTAssertEqual(state.capsChanged(down: false), [.cancelShortcuts, .capsTapBlocked(.otherKey)])
+        }
+    }
+
+    func testVolumeKeysRepeatButMuteOnlyTogglesOncePerPress() {
+        for key in SystemMediaKey.allCases {
+            var state = KeyboardRemappingState()
+            state.enabled = [key.rule]
+            _ = state.keyDown(key.functionKeyCode, modifiers: [], isRepeat: false, safariFrontmost: false)
+            for _ in 0..<3 {
+                let result = state.keyDown(key.functionKeyCode, modifiers: [], isRepeat: true,
+                                           safariFrontmost: false)
+                XCTAssertTrue(result.consume)
+                XCTAssertEqual(result.actions, key == .mute ? [] : [.sendMediaKey(key, isRepeat: true)])
+            }
+            XCTAssertTrue(state.keyUp(key.functionKeyCode).consume)
+            XCTAssertEqual(state.keyDown(key.functionKeyCode, modifiers: [], isRepeat: false,
+                                         safariFrontmost: false).actions, [.sendMediaKey(key, isRepeat: false)])
+        }
+    }
+
+    func testResetAndMidPressEnableCannotGenerateMediaActions() {
+        var state = KeyboardRemappingState()
+        state.enabled = [.f11VolumeDown]
+        let code = UInt16(kVK_F11)
+        XCTAssertFalse(state.keyDown(code, modifiers: [], isRepeat: true, safariFrontmost: false).consume)
+        _ = state.keyDown(code, modifiers: [], isRepeat: false, safariFrontmost: false)
+        XCTAssertTrue(state.keyDown(code, modifiers: .command, isRepeat: true,
+                                    safariFrontmost: false).actions.isEmpty)
+        state.reset()
+        XCTAssertFalse(state.keyDown(code, modifiers: [], isRepeat: true, safariFrontmost: false).consume)
+        XCTAssertFalse(state.keyUp(code).consume)
+    }
+
+    func testMediaEventPayloadUsesSystemAuxiliaryKeyCodesAndBalancedStates() {
+        XCTAssertEqual(SystemMediaKey.mute.functionKeyCode, UInt16(kVK_F10))
+        XCTAssertEqual(SystemMediaKey.volumeDown.functionKeyCode, UInt16(kVK_F11))
+        XCTAssertEqual(SystemMediaKey.volumeUp.functionKeyCode, UInt16(kVK_F12))
+        XCTAssertEqual(SystemMediaKey.mute.eventData(isDown: true, isRepeat: false), 0x0007_0A00)
+        XCTAssertEqual(SystemMediaKey.mute.eventData(isDown: false, isRepeat: false), 0x0007_0B00)
+        XCTAssertEqual(SystemMediaKey.volumeDown.eventData(isDown: true, isRepeat: true), 0x0001_0A01)
+        XCTAssertEqual(SystemMediaKey.volumeDown.eventData(isDown: false, isRepeat: true), 0x0001_0B00)
+        XCTAssertEqual(SystemMediaKey.volumeUp.eventData(isDown: true, isRepeat: false), 0x0000_0A00)
+    }
+
     func testEscapeMappingsOnlyConsumeTheirExactModifiers() {
         var state = KeyboardRemappingState()
         state.enabled = [.commandEscape, .shiftEscape]
