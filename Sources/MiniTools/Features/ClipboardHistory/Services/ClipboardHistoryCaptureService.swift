@@ -48,7 +48,9 @@ enum ClipboardHistoryCaptureService {
         var payloads: [ClipboardHistoryCapturedRepresentation] = []
         // Prefer an advertised plain representation before importing any HTML/RTF.
         // HTML import uses AppKit and stays on the main caller when no plain alternative exists.
-        var plainText = pasteboardItems.lazy.compactMap { $0.string(forType: .string) }.first
+        var plainText = firstAvailablePlainText(in: pasteboardItems) {
+            $0.string(forType: .string)
+        }
         var imageData: Data?
         var fileNames: [String] = []
         var hasRichText = false
@@ -64,7 +66,7 @@ enum ClipboardHistoryCaptureService {
                     )
                 )
                 if type == .string, plainText == nil {
-                    plainText = item.string(forType: .string)
+                    plainText = String(data: data, encoding: .utf8)
                 }
                 if type == .rtf || type == .html {
                     hasRichText = true
@@ -88,6 +90,18 @@ enum ClipboardHistoryCaptureService {
             fileNames: fileNames, hasRichText: hasRichText,
             sourceBundleIdentifier: sourceApplication?.bundleIdentifier,
             sourceName: sourceApplication?.localizedName, copiedAt: now)
+    }
+
+    static func firstAvailablePlainText<Item>(
+        in items: [Item],
+        read: (Item) -> String?
+    ) -> String? {
+        // Lazy collection filtering can evaluate a getter again when fetching
+        // its first element. A pasteboard provider may return nil on that read.
+        for item in items {
+            if let text = read(item) { return text }
+        }
+        return nil
     }
 
     /// Hashing and ImageIO thumbnail encoding do not use AppKit and run off the main actor.
