@@ -5,6 +5,54 @@ import XCTest
 @testable import MiniTools
 
 final class ClipboardCaptureProcessingTests: XCTestCase {
+    func testPlainTextSurvivesProviderBecomingUnavailableAfterFirstRead() {
+        var reads = 0
+        let text = ClipboardHistoryCaptureService.firstAvailablePlainText(in: [0]) { _ in
+            reads += 1
+            return reads == 1 ? "remote clipboard text" : nil
+        }
+        XCTAssertEqual(text, "remote clipboard text")
+        XCTAssertEqual(reads, 1)
+    }
+
+    func testPlainTextReadsEachItemOnceAndStopsAtFirstAvailableValue() {
+        var reads: [Int: Int] = [:]
+        let text = ClipboardHistoryCaptureService.firstAvailablePlainText(in: [0, 1, 2]) { item in
+            reads[item, default: 0] += 1
+            return item == 1 && reads[item] == 1 ? "available" : nil
+        }
+        XCTAssertEqual(text, "available")
+        XCTAssertEqual(reads, [0: 1, 1: 1])
+    }
+
+    func testUnavailablePlainTextIsNotRetriedOrForceUnwrapped() {
+        var reads: [Int: Int] = [:]
+        let text = ClipboardHistoryCaptureService.firstAvailablePlainText(in: [0, 1]) { item in
+            reads[item, default: 0] += 1
+            // A later read might succeed, but it is not part of this snapshot.
+            return reads[item] == 1 ? nil : "new clipboard contents"
+        }
+        XCTAssertNil(text)
+        XCTAssertEqual(reads, [0: 1, 1: 1])
+    }
+
+    func testEmptyPlainTextRemainsAnAvailableRepresentation() {
+        var reads = 0
+        let text = ClipboardHistoryCaptureService.firstAvailablePlainText(in: [0, 1]) { _ in
+            reads += 1
+            return ""
+        }
+        XCTAssertEqual(text, "")
+        XCTAssertEqual(reads, 1)
+    }
+
+    func testEmptyPasteboardItemsDoNotReadProvider() {
+        XCTAssertNil(ClipboardHistoryCaptureService.firstAvailablePlainText(in: [Int]()) { _ in
+            XCTFail("An empty item snapshot must not invoke its provider")
+            return "unexpected"
+        })
+    }
+
     @MainActor
     func testPlainRepresentationWinsEvenWhenHTMLIsAdvertisedFirst() throws {
         let board = NSPasteboard(name: .init("CaptureProcessing.\(UUID())"))
