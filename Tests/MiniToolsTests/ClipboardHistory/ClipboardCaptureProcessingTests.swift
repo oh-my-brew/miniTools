@@ -5,6 +5,57 @@ import XCTest
 @testable import MiniTools
 
 final class ClipboardCaptureProcessingTests: XCTestCase {
+    @MainActor
+    func testPresentationRequestsCaptureWithoutWaitingForPollingTimer() async {
+        var count = 0
+        var reads = 0
+        let received = expectation(description: "presentation-triggered capture")
+        let monitor = ClipboardHistoryMonitor(readChangeCount: { count }, readSnapshot: {
+            reads += 1
+            return self.readableSnapshot("latest")
+        })
+        // Enable without starting a timer: delivery must come from the presentation request.
+        monitor.setEnabled(true)
+        monitor.onCapture = { capture in
+            XCTAssertEqual(capture.item.plainText, "latest")
+            received.fulfill()
+        }
+        defer { monitor.stop() }
+        count = 1
+        monitor.captureLatest()
+        monitor.captureLatest()
+        XCTAssertEqual(reads, 0) // Pasteboard access must not block panel presentation.
+        await fulfillment(of: [received], timeout: 2)
+        XCTAssertEqual(reads, 1)
+    }
+
+    @MainActor
+    func testPresentationRequestIsCancelledAcrossStopAndRestart() async {
+        var count = 0
+        var reads = 0
+        let monitor = ClipboardHistoryMonitor(readChangeCount: { count }, readSnapshot: {
+            reads += 1
+            return self.readableSnapshot("latest")
+        })
+        monitor.setEnabled(true)
+        defer { monitor.stop() }
+        count = 1
+        monitor.captureLatest()
+        monitor.stop()
+        monitor.setEnabled(true)
+        count = 2
+        let stale = expectation(description: "old presentation request discarded")
+        stale.isInverted = true
+        monitor.onCapture = { _ in stale.fulfill() }
+        await fulfillment(of: [stale], timeout: 0.05)
+        XCTAssertEqual(reads, 0)
+        let received = expectation(description: "new presentation request delivered")
+        monitor.onCapture = { _ in received.fulfill() }
+        monitor.captureLatest()
+        await fulfillment(of: [received], timeout: 2)
+        XCTAssertEqual(reads, 1)
+    }
+
     func testSnapshotPreservesReadableTextWhenRawProviderDisappears() throws {
         var stringReads = 0
         var dataReads = 0

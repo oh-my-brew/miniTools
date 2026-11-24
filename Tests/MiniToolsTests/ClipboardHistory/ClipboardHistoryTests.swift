@@ -97,6 +97,107 @@ final class ClipboardHistoryTests: XCTestCase {
         XCTAssertEqual(payloads.first?.data, Data("recent".utf8))
     }
 
+    func testCopyRefreshDoesNotRescanLoadedHistory() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ClipboardIndexTests.\(UUID())", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fileManager = CountingClipboardFileManager()
+        let store = ClipboardHistoryStore(rootURL: root, fileManager: fileManager)
+        let initial = makeCapture(text: "existing", date: Date(timeIntervalSince1970: 1))
+        _ = try await store.save(initial)
+        _ = try await store.loadItems(retention: .forever)
+        for index in 0..<12 {
+            let capture = makeCapture(text: "copy \(index)", date: Date(timeIntervalSince1970: Double(index + 2)))
+            _ = try await store.save(capture)
+            let items = try await store.loadItems(retention: .forever)
+            XCTAssertEqual(items.first?.id, capture.item.id)
+            XCTAssertEqual(items.count, index + 2)
+        }
+        XCTAssertEqual(fileManager.enumerations, 1)
+        let reopened = ClipboardHistoryStore(rootURL: root)
+        let persisted = try await reopened.loadItems(retention: .forever)
+        let cached = try await store.loadItems(retention: .forever)
+        XCTAssertEqual(persisted.map(\.id), cached.map(\.id))
+        XCTAssertTrue(persisted.contains { $0.id == initial.item.id })
+    }
+
+    func testLoadedIndexTracksReplacementPromotionOCRAndDeletion() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ClipboardIndexTests.\(UUID())", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fileManager = CountingClipboardFileManager()
+        let store = ClipboardHistoryStore(rootURL: root, fileManager: fileManager)
+        let first = makeCapture(text: "first", date: Date(timeIntervalSince1970: 1))
+        let second = makeCapture(text: "second", date: Date(timeIntervalSince1970: 2))
+        _ = try await store.save(first)
+        _ = try await store.save(second)
+        _ = try await store.loadItems(retention: .forever)
+        let replacement = makeCapture(text: "first", date: Date(timeIntervalSince1970: 3),
+                                      hash: first.item.contentHash)
+        _ = try await store.save(replacement, replacing: first.item)
+        _ = try await store.promote(second.item, at: Date(timeIntervalSince1970: 4))
+        _ = try await store.enrichSearchableText(
+            id: second.item.id, contentHash: second.item.contentHash, text: "recognized"
+        )
+        let items = try await store.loadItems(retention: .forever)
+        XCTAssertEqual(items.map(\.id), [second.item.id, replacement.item.id])
+        XCTAssertTrue(items.first?.searchableText.contains("recognized") == true)
+        try await store.delete(second.item)
+        let deleted = try await store.loadItems(retention: .forever)
+        XCTAssertEqual(deleted.map(\.id), [replacement.item.id])
+        let lateOCR = try await store.enrichSearchableText(
+            id: second.item.id, contentHash: second.item.contentHash, text: "late"
+        )
+        XCTAssertNil(lateOCR)
+        XCTAssertEqual(fileManager.enumerations, 1)
+    }
+
+    func testLoadedIndexHonorsPruningAndClearWithoutResurrectingHistory() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ClipboardIndexTests.\(UUID())", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fileManager = CountingClipboardFileManager()
+        let store = ClipboardHistoryStore(rootURL: root, fileManager: fileManager)
+        _ = try await store.save(makeCapture(text: "old", date: Date(timeIntervalSince1970: 0)))
+        let recent = makeCapture(text: "recent", date: Date(timeIntervalSince1970: 100_000))
+        _ = try await store.save(recent)
+        _ = try await store.loadItems(retention: .forever)
+        let pruned = try await store.loadItems(retention: .oneDay, now: Date(timeIntervalSince1970: 100_001))
+        XCTAssertEqual(pruned.map(\.id), [recent.item.id])
+        let permanent = try await store.loadItems(retention: .forever)
+        XCTAssertEqual(permanent.map(\.id), [recent.item.id])
+        try await store.deleteAll()
+        let empty = try await store.loadItems(retention: .forever)
+        XCTAssertTrue(empty.isEmpty)
+        let next = makeCapture(text: "after clear", date: Date())
+        _ = try await store.save(next)
+        let copied = try await store.loadItems(retention: .forever)
+        XCTAssertEqual(copied.map(\.id), [next.item.id])
+        let reopened = ClipboardHistoryStore(rootURL: root)
+        let persisted = try await reopened.loadItems(retention: .forever)
+        XCTAssertEqual(persisted.map(\.id), [next.item.id])
+        XCTAssertEqual(fileManager.enumerations, 1)
+    }
+
+    func testFailedSaveInvalidatesIndexAndCanRecover() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ClipboardIndexTests.\(UUID())", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fileManager = CountingClipboardFileManager()
+        let store = ClipboardHistoryStore(rootURL: root, fileManager: fileManager)
+        let initial = makeCapture(text: "existing", date: Date())
+        _ = try await store.save(initial)
+        _ = try await store.loadItems(retention: .forever)
+        fileManager.failNextCreation()
+        do {
+            _ = try await store.save(makeCapture(text: "failed", date: Date()))
+            XCTFail("Expected the injected filesystem error")
+        } catch {}
+        let recovered = try await store.loadItems(retention: .forever)
+        XCTAssertEqual(recovered.map(\.id), [initial.item.id])
+        XCTAssertEqual(fileManager.enumerations, 2)
+    }
+
     func testPromotingUsedItemMovesItToFrontWithoutChangingPayload() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("ClipboardHistoryTests.\(UUID())", isDirectory: true)
@@ -348,7 +449,7 @@ final class ClipboardHistoryTests: XCTestCase {
         XCTAssertFalse(viewModel.showsNumberShortcuts)
     }
 
-    private func makeCapture(text: String, date: Date) -> ClipboardHistoryCapture {
+    private func makeCapture(text: String, date: Date, hash: String? = nil) -> ClipboardHistoryCapture {
         let id = UUID()
         let representation = ClipboardHistoryRepresentation(
             itemIndex: 0,
@@ -364,7 +465,7 @@ final class ClipboardHistoryTests: XCTestCase {
             summary: text,
             searchableText: text,
             plainText: text,
-            contentHash: id.uuidString,
+            contentHash: hash ?? id.uuidString,
             pixelWidth: nil,
             pixelHeight: nil,
             thumbnailFileName: nil,
@@ -381,5 +482,40 @@ final class ClipboardHistoryTests: XCTestCase {
             ],
             thumbnailData: nil
         )
+    }
+}
+
+private final class CountingClipboardFileManager: FileManager, @unchecked Sendable {
+    private let lock = NSLock()
+    private var enumerationCount = 0
+    private var shouldFailCreation = false
+
+    var enumerations: Int { lock.withLock { enumerationCount } }
+
+    func failNextCreation() {
+        lock.withLock { shouldFailCreation = true }
+    }
+
+    override func contentsOfDirectory(
+        at url: URL,
+        includingPropertiesForKeys keys: [URLResourceKey]?,
+        options mask: FileManager.DirectoryEnumerationOptions = []
+    ) throws -> [URL] {
+        lock.withLock { enumerationCount += 1 }
+        return try super.contentsOfDirectory(at: url, includingPropertiesForKeys: keys, options: mask)
+    }
+
+    override func createDirectory(
+        at url: URL,
+        withIntermediateDirectories createIntermediates: Bool,
+        attributes: [FileAttributeKey: Any]? = nil
+    ) throws {
+        let fail = lock.withLock {
+            let value = shouldFailCreation
+            shouldFailCreation = false
+            return value
+        }
+        if fail { throw CocoaError(.fileWriteUnknown) }
+        try super.createDirectory(at: url, withIntermediateDirectories: createIntermediates, attributes: attributes)
     }
 }

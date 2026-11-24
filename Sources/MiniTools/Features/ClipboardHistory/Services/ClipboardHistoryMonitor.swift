@@ -80,6 +80,15 @@ final class ClipboardHistoryMonitor {
         pendingAttempts = 0
     }
 
+    func captureLatest() {
+        let requestedGeneration = generation
+        // Present the panel before touching a potentially slow pasteboard provider.
+        Task { @MainActor [weak self] in
+            guard let self, self.generation == requestedGeneration else { return }
+            self.poll()
+        }
+    }
+
     func poll() {
         let changeCount = readChangeCount()
         guard changeCount != lastChangeCount else { return }
