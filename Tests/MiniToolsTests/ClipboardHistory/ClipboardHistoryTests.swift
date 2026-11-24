@@ -101,8 +101,8 @@ final class ClipboardHistoryTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("ClipboardIndexTests.\(UUID())", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        let fileManager = CountingClipboardFileManager()
-        let store = ClipboardHistoryStore(rootURL: root, fileManager: fileManager)
+        let access = ClipboardFileAccessProbe()
+        let store = ClipboardHistoryStore(rootURL: root, fileManager: CountingClipboardFileManager(access: access))
         let initial = makeCapture(text: "existing", date: Date(timeIntervalSince1970: 1))
         _ = try await store.save(initial)
         _ = try await store.loadItems(retention: .forever)
@@ -113,7 +113,7 @@ final class ClipboardHistoryTests: XCTestCase {
             XCTAssertEqual(items.first?.id, capture.item.id)
             XCTAssertEqual(items.count, index + 2)
         }
-        XCTAssertEqual(fileManager.enumerations, 1)
+        XCTAssertEqual(access.enumerations, 1)
         let reopened = ClipboardHistoryStore(rootURL: root)
         let persisted = try await reopened.loadItems(retention: .forever)
         let cached = try await store.loadItems(retention: .forever)
@@ -125,8 +125,8 @@ final class ClipboardHistoryTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("ClipboardIndexTests.\(UUID())", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        let fileManager = CountingClipboardFileManager()
-        let store = ClipboardHistoryStore(rootURL: root, fileManager: fileManager)
+        let access = ClipboardFileAccessProbe()
+        let store = ClipboardHistoryStore(rootURL: root, fileManager: CountingClipboardFileManager(access: access))
         let first = makeCapture(text: "first", date: Date(timeIntervalSince1970: 1))
         let second = makeCapture(text: "second", date: Date(timeIntervalSince1970: 2))
         _ = try await store.save(first)
@@ -149,15 +149,15 @@ final class ClipboardHistoryTests: XCTestCase {
             id: second.item.id, contentHash: second.item.contentHash, text: "late"
         )
         XCTAssertNil(lateOCR)
-        XCTAssertEqual(fileManager.enumerations, 1)
+        XCTAssertEqual(access.enumerations, 1)
     }
 
     func testLoadedIndexHonorsPruningAndClearWithoutResurrectingHistory() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("ClipboardIndexTests.\(UUID())", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        let fileManager = CountingClipboardFileManager()
-        let store = ClipboardHistoryStore(rootURL: root, fileManager: fileManager)
+        let access = ClipboardFileAccessProbe()
+        let store = ClipboardHistoryStore(rootURL: root, fileManager: CountingClipboardFileManager(access: access))
         _ = try await store.save(makeCapture(text: "old", date: Date(timeIntervalSince1970: 0)))
         let recent = makeCapture(text: "recent", date: Date(timeIntervalSince1970: 100_000))
         _ = try await store.save(recent)
@@ -176,26 +176,26 @@ final class ClipboardHistoryTests: XCTestCase {
         let reopened = ClipboardHistoryStore(rootURL: root)
         let persisted = try await reopened.loadItems(retention: .forever)
         XCTAssertEqual(persisted.map(\.id), [next.item.id])
-        XCTAssertEqual(fileManager.enumerations, 1)
+        XCTAssertEqual(access.enumerations, 1)
     }
 
     func testFailedSaveInvalidatesIndexAndCanRecover() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("ClipboardIndexTests.\(UUID())", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        let fileManager = CountingClipboardFileManager()
-        let store = ClipboardHistoryStore(rootURL: root, fileManager: fileManager)
+        let access = ClipboardFileAccessProbe()
+        let store = ClipboardHistoryStore(rootURL: root, fileManager: CountingClipboardFileManager(access: access))
         let initial = makeCapture(text: "existing", date: Date())
         _ = try await store.save(initial)
         _ = try await store.loadItems(retention: .forever)
-        fileManager.failNextCreation()
+        access.failNextCreation()
         do {
             _ = try await store.save(makeCapture(text: "failed", date: Date()))
             XCTFail("Expected the injected filesystem error")
         } catch {}
         let recovered = try await store.loadItems(retention: .forever)
         XCTAssertEqual(recovered.map(\.id), [initial.item.id])
-        XCTAssertEqual(fileManager.enumerations, 2)
+        XCTAssertEqual(access.enumerations, 2)
     }
 
     func testPromotingUsedItemMovesItToFrontWithoutChangingPayload() async throws {
@@ -485,7 +485,7 @@ final class ClipboardHistoryTests: XCTestCase {
     }
 }
 
-private final class CountingClipboardFileManager: FileManager, @unchecked Sendable {
+private final class ClipboardFileAccessProbe: @unchecked Sendable {
     private let lock = NSLock()
     private var enumerationCount = 0
     private var shouldFailCreation = false
@@ -496,12 +496,33 @@ private final class CountingClipboardFileManager: FileManager, @unchecked Sendab
         lock.withLock { shouldFailCreation = true }
     }
 
+    func recordEnumeration() {
+        lock.withLock { enumerationCount += 1 }
+    }
+
+    func consumeCreationFailure() -> Bool {
+        lock.withLock {
+            let value = shouldFailCreation
+            shouldFailCreation = false
+            return value
+        }
+    }
+}
+
+private final class CountingClipboardFileManager: FileManager, @unchecked Sendable {
+    private let access: ClipboardFileAccessProbe
+
+    init(access: ClipboardFileAccessProbe) {
+        self.access = access
+        super.init()
+    }
+
     override func contentsOfDirectory(
         at url: URL,
         includingPropertiesForKeys keys: [URLResourceKey]?,
         options mask: FileManager.DirectoryEnumerationOptions = []
     ) throws -> [URL] {
-        lock.withLock { enumerationCount += 1 }
+        access.recordEnumeration()
         return try super.contentsOfDirectory(at: url, includingPropertiesForKeys: keys, options: mask)
     }
 
@@ -510,12 +531,7 @@ private final class CountingClipboardFileManager: FileManager, @unchecked Sendab
         withIntermediateDirectories createIntermediates: Bool,
         attributes: [FileAttributeKey: Any]? = nil
     ) throws {
-        let fail = lock.withLock {
-            let value = shouldFailCreation
-            shouldFailCreation = false
-            return value
-        }
-        if fail { throw CocoaError(.fileWriteUnknown) }
+        if access.consumeCreationFailure() { throw CocoaError(.fileWriteUnknown) }
         try super.createDirectory(at: url, withIntermediateDirectories: createIntermediates, attributes: attributes)
     }
 }
