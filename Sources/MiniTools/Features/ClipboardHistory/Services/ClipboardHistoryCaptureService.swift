@@ -25,6 +25,12 @@ enum ClipboardHistoryCaptureService {
         let copiedAt: Date
     }
 
+    enum ReadResult {
+        case captured(Snapshot)
+        case ignored
+        case unavailable
+    }
+
     static func capture(from pasteboard: NSPasteboard, sourceApplication: NSRunningApplication?,
                         now: Date = Date()) -> ClipboardHistoryCapture? {
         snapshot(from: pasteboard, sourceApplication: sourceApplication, now: now).flatMap(process)
@@ -36,28 +42,63 @@ enum ClipboardHistoryCaptureService {
         sourceApplication: NSRunningApplication?,
         now: Date = Date()
     ) -> Snapshot? {
-        guard let pasteboardItems = pasteboard.pasteboardItems, !pasteboardItems.isEmpty else {
-            return nil
-        }
-        let advertisedTypes = Set(pasteboardItems.flatMap(\.types).map(\.rawValue))
+        guard case let .captured(snapshot) = read(
+            from: pasteboard, sourceApplication: sourceApplication, now: now
+        ) else { return nil }
+        return snapshot
+    }
+
+    static func read(
+        from pasteboard: NSPasteboard,
+        sourceApplication: NSRunningApplication?,
+        now: Date = Date()
+    ) -> ReadResult {
+        read(items: pasteboard.pasteboardItems ?? [],
+             types: { $0.types }, string: { $0.string(forType: $1) },
+             data: { $0.data(forType: $1) },
+             sourceBundleIdentifier: sourceApplication?.bundleIdentifier,
+             sourceName: sourceApplication?.localizedName, now: now)
+    }
+
+    static func read<Item>(
+        items: [Item],
+        types: (Item) -> [NSPasteboard.PasteboardType],
+        string: (Item, NSPasteboard.PasteboardType) -> String?,
+        data: (Item, NSPasteboard.PasteboardType) -> Data?,
+        sourceBundleIdentifier: String? = nil,
+        sourceName: String? = nil,
+        now: Date = Date()
+    ) -> ReadResult {
+        guard !items.isEmpty else { return .unavailable }
+        let itemTypes = items.map(types)
+        let advertisedTypes = Set(itemTypes.flatMap { $0 }.map(\.rawValue))
         guard !advertisedTypes.contains(markerType.rawValue),
               ignoredTypes.isDisjoint(with: advertisedTypes) else {
-            return nil
+            return .ignored
         }
 
         var payloads: [ClipboardHistoryCapturedRepresentation] = []
         // Prefer an advertised plain representation before importing any HTML/RTF.
         // HTML import uses AppKit and stays on the main caller when no plain alternative exists.
-        var plainText = firstAvailablePlainText(in: pasteboardItems) {
-            $0.string(forType: .string)
+        var savedText: [Int: String] = [:]
+        var plainText = firstAvailablePlainText(in: Array(items.enumerated())) { entry in
+            guard itemTypes[entry.offset].contains(.string),
+                  let value = string(entry.element, .string) else { return nil }
+            savedText[entry.offset] = value
+            return value
         }
         var imageData: Data?
         var fileNames: [String] = []
         var hasRichText = false
 
-        for (itemIndex, item) in pasteboardItems.enumerated() {
-            for type in item.types where isAllowed(type) {
-                guard let data = item.data(forType: type), !data.isEmpty else { continue }
+        for (itemIndex, item) in items.enumerated() {
+            for type in itemTypes[itemIndex] where isAllowed(type) {
+                // A live provider can disappear between string and data reads.
+                // Preserve the value already obtained, scoped to this exact item.
+                let rawData = data(item, type)
+                let fallback = type == .string ? savedText[itemIndex].map { Data($0.utf8) } : nil
+                guard let data = rawData.flatMap({ $0.isEmpty ? nil : $0 }) ?? fallback,
+                      !data.isEmpty else { continue }
                 payloads.append(
                     ClipboardHistoryCapturedRepresentation(
                         itemIndex: itemIndex,
@@ -78,18 +119,20 @@ enum ClipboardHistoryCaptureService {
                     imageData = data
                 }
                 if type == .fileURL,
-                   let value = item.string(forType: .fileURL),
+                   let value = string(item, .fileURL),
                    let url = URL(string: value) {
                     fileNames.append(url.lastPathComponent)
                 }
             }
         }
 
-        guard !payloads.isEmpty else { return nil }
-        return Snapshot(payloads: payloads, plainText: plainText, imageData: imageData,
+        guard !payloads.isEmpty else {
+            return itemTypes.contains(where: { $0.contains(where: isAllowed) }) ? .unavailable : .ignored
+        }
+        return .captured(Snapshot(payloads: payloads, plainText: plainText, imageData: imageData,
             fileNames: fileNames, hasRichText: hasRichText,
-            sourceBundleIdentifier: sourceApplication?.bundleIdentifier,
-            sourceName: sourceApplication?.localizedName, copiedAt: now)
+            sourceBundleIdentifier: sourceBundleIdentifier,
+            sourceName: sourceName, copiedAt: now))
     }
 
     static func firstAvailablePlainText<Item>(
