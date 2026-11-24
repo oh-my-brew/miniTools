@@ -6,30 +6,49 @@ final class ClipboardHistoryMonitor {
     var onRecognizedText: ((UUID, String, String) async -> Void)?
     var onError: ((String) -> Void)?
 
-    private let pasteboard: NSPasteboard
+    private let readChangeCount: () -> Int
+    private let readSnapshot: () -> ClipboardHistoryCaptureService.ReadResult
     private let process: @Sendable (ClipboardHistoryCaptureService.Snapshot) -> ClipboardHistoryCapture?
     private let recognize: @Sendable (Data) throws -> String?
     private var timer: Timer?
     private var lastChangeCount: Int
+    private var pendingChangeCount: Int?
+    private var pendingAttempts = 0
     private var isEnabled = false
     private var generation = 0
     private var captureTask: Task<Void, Never>?
     private var recognitionTask: Task<Void, Never>?
 
-    init(pasteboard: NSPasteboard = .general,
+    convenience init(pasteboard: NSPasteboard = .general,
          process: @escaping @Sendable (ClipboardHistoryCaptureService.Snapshot) -> ClipboardHistoryCapture? = ClipboardHistoryCaptureService.process,
          recognize: @escaping @Sendable (Data) throws -> String? = {
              try ImageRecognitionService.recognizeContents(in: $0).recognizedText
          }) {
-        self.pasteboard = pasteboard
+        self.init(readChangeCount: { pasteboard.changeCount }, readSnapshot: {
+            ClipboardHistoryCaptureService.read(
+                from: pasteboard, sourceApplication: NSWorkspace.shared.frontmostApplication
+            )
+        }, process: process, recognize: recognize)
+    }
+
+    init(readChangeCount: @escaping () -> Int,
+         readSnapshot: @escaping () -> ClipboardHistoryCaptureService.ReadResult,
+         process: @escaping @Sendable (ClipboardHistoryCaptureService.Snapshot) -> ClipboardHistoryCapture? = ClipboardHistoryCaptureService.process,
+         recognize: @escaping @Sendable (Data) throws -> String? = {
+             try ImageRecognitionService.recognizeContents(in: $0).recognizedText
+         }) {
+        self.readChangeCount = readChangeCount
+        self.readSnapshot = readSnapshot
         self.process = process
         self.recognize = recognize
-        lastChangeCount = pasteboard.changeCount
+        lastChangeCount = readChangeCount()
     }
 
     func start(enabled: Bool) {
         isEnabled = enabled
-        lastChangeCount = pasteboard.changeCount
+        lastChangeCount = readChangeCount()
+        pendingChangeCount = nil
+        pendingAttempts = 0
         guard timer == nil else { return }
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.poll() }
@@ -41,7 +60,7 @@ final class ClipboardHistoryMonitor {
     func setEnabled(_ enabled: Bool) {
         invalidateWork()
         isEnabled = enabled
-        lastChangeCount = pasteboard.changeCount
+        lastChangeCount = readChangeCount()
     }
 
     func stop() {
@@ -57,16 +76,41 @@ final class ClipboardHistoryMonitor {
         recognitionTask?.cancel()
         captureTask = nil
         recognitionTask = nil
+        pendingChangeCount = nil
+        pendingAttempts = 0
     }
 
     func poll() {
-        let changeCount = pasteboard.changeCount
+        let changeCount = readChangeCount()
         guard changeCount != lastChangeCount else { return }
-        lastChangeCount = changeCount
         guard isEnabled else { return }
-        guard let snapshot = ResponsivenessMetrics.measure("ClipboardSnapshot", {
-            ClipboardHistoryCaptureService.snapshot(from: pasteboard, sourceApplication: NSWorkspace.shared.frontmostApplication)
-        }), pasteboard.changeCount == changeCount else { return }
+        if pendingChangeCount != changeCount {
+            pendingChangeCount = changeCount
+            pendingAttempts = 0
+        }
+        pendingAttempts += 1
+        let readingGeneration = generation
+        let result = ResponsivenessMetrics.measure("ClipboardSnapshot", readSnapshot)
+        guard isEnabled, generation == readingGeneration else { return }
+        // Never combine data from different copies. A new count is read on the next poll.
+        guard readChangeCount() == changeCount else { return }
+        let snapshot: ClipboardHistoryCaptureService.Snapshot
+        switch result {
+        case let .captured(value):
+            snapshot = value
+        case .ignored:
+            lastChangeCount = changeCount
+            return
+        case .unavailable:
+            // Promised data may become readable without another changeCount.
+            // Retry on the existing timer, with a maximum of three reads per copy.
+            if pendingAttempts >= 3 {
+                lastChangeCount = changeCount
+                onError?("未能读取本次复制内容，未加入剪贴板历史")
+            }
+            return
+        }
+        lastChangeCount = changeCount
         let previous = captureTask
         let generation = generation
         let process = process
