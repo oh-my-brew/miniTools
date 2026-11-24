@@ -12,6 +12,7 @@ actor ClipboardHistoryStore {
     private let fileManager: FileManager
     private let encoder: JSONEncoder
     private let decoder = JSONDecoder()
+    private var cachedItems: [UUID: ClipboardHistoryItem]?
 
     init(rootURL: URL? = nil, fileManager: FileManager = .default) {
         self.fileManager = fileManager
@@ -22,21 +23,30 @@ actor ClipboardHistoryStore {
     }
 
     func loadItems(retention: ClipboardHistoryRetention, now: Date = Date()) throws -> [ClipboardHistoryItem] {
-        try ensureRootExists()
-        var items: [ClipboardHistoryItem] = []
-        for directory in try fileManager.contentsOfDirectory(
-            at: rootURL,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) {
-            let metadataURL = directory.appendingPathComponent("metadata.json")
-            guard let data = try? Data(contentsOf: metadataURL),
-                  let item = try? decoder.decode(ClipboardHistoryItem.self, from: data) else {
-                continue
+        let items: [ClipboardHistoryItem]
+        if let cachedItems {
+            items = Array(cachedItems.values)
+        } else {
+            items = try ResponsivenessMetrics.measure("ClipboardHistoryIndex") {
+                try ensureRootExists()
+                var loaded: [ClipboardHistoryItem] = []
+                for directory in try fileManager.contentsOfDirectory(
+                    at: rootURL,
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles]
+                ) {
+                    let metadataURL = directory.appendingPathComponent("metadata.json")
+                    guard let data = try? Data(contentsOf: metadataURL),
+                          let item = try? decoder.decode(ClipboardHistoryItem.self, from: data) else {
+                        continue
+                    }
+                    loaded.append(item)
+                }
+                return loaded
             }
-            items.append(item)
         }
         let kept = try prune(items: items, retention: retention, now: now)
+        cachedItems = Dictionary(kept.map { ($0.id, $0) }, uniquingKeysWith: { _, new in new })
         return kept.sorted { $0.copiedAt > $1.copiedAt }
     }
 
@@ -44,6 +54,11 @@ actor ClipboardHistoryStore {
         _ capture: ClipboardHistoryCapture,
         replacing duplicate: ClipboardHistoryItem? = nil
     ) throws -> ClipboardHistoryItem {
+        var completed = false
+        defer {
+            // A failed write may have removed a duplicate before failing.
+            if !completed { cachedItems = nil }
+        }
         try ensureRootExists()
         if let duplicate {
             try? fileManager.removeItem(at: itemDirectory(duplicate.id))
@@ -64,6 +79,9 @@ actor ClipboardHistoryStore {
             to: directory.appendingPathComponent("metadata.json"),
             options: .atomic
         )
+        if let duplicate { cachedItems?[duplicate.id] = nil }
+        cachedItems?[capture.item.id] = capture.item
+        completed = true
         return capture.item
     }
 
@@ -101,6 +119,7 @@ actor ClipboardHistoryStore {
               item.contentHash == contentHash else { return nil }
         item.searchableText += "\n" + text
         try encoder.encode(item).write(to: url, options: .atomic)
+        cachedItems?[item.id] = item
         return item
     }
 
@@ -112,6 +131,7 @@ actor ClipboardHistoryStore {
             to: itemDirectory(item.id).appendingPathComponent("metadata.json"),
             options: .atomic
         )
+        cachedItems?[promoted.id] = promoted
         return promoted
     }
 
@@ -150,13 +170,16 @@ actor ClipboardHistoryStore {
 
     func delete(_ item: ClipboardHistoryItem) throws {
         try fileManager.removeItem(at: itemDirectory(item.id))
+        cachedItems?[item.id] = nil
     }
 
     func deleteAll() throws {
+        cachedItems = nil
         if fileManager.fileExists(atPath: rootURL.path) {
             try fileManager.removeItem(at: rootURL)
         }
         try ensureRootExists()
+        cachedItems = [:]
     }
 
     private func prune(
