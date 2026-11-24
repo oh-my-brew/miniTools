@@ -86,6 +86,7 @@ final class ClipboardHistoryPanelController: NSObject, NSWindowDelegate {
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         panel.alphaValue = reduceMotion ? 1 : 0.78
         panel.makeKeyAndOrderFront(nil)
+        monitor.captureLatest()
         guard !reduceMotion else { return }
         let originalFrame = panel.frame
         panel.setFrameOrigin(CGPoint(x: originalFrame.minX, y: originalFrame.minY - 4))
